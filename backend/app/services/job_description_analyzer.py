@@ -10,104 +10,12 @@ from app.models.command_center_models import (
     MissingKeywordSuggestion,
 )
 from app.models.resume_models import Resume
-from app.services.resume_analyzer import ResumeAnalyzer, _bounded_score, _exact_keyword_match, _sentence_snippet
-
-
-JD_KEYWORD_ALIASES: dict[str, list[str]] = {
-    "Python": ["Python"],
-    "C++": ["C++", "CPP"],
-    "C": ["C"],
-    "Java": ["Java"],
-    "SQL": ["SQL", "Database Query"],
-    "JavaScript": ["JavaScript", "JS"],
-    "TypeScript": ["TypeScript", "TS"],
-    "React": ["React", "React.js", "ReactJS"],
-    "Node.js": ["Node.js", "NodeJS", "Node"],
-    "FastAPI": ["FastAPI"],
-    "Flask": ["Flask"],
-    "Django": ["Django"],
-    "REST API": ["REST API", "RESTful API", "RESTful", "API", "APIs", "API endpoint", "API endpoints"],
-    "Data Structures": ["Data Structures", "Data Structure", "DSA"],
-    "Algorithms": ["Algorithms", "Algorithm", "DSA"],
-    "OOP": ["OOP", "Object Oriented", "Object-Oriented", "Object-Oriented Programming"],
-    "Problem Solving": ["Problem Solving", "Problem-Solving", "Analytical Skills"],
-    "Debugging": ["Debugging", "Troubleshooting"],
-    "Software Development": ["Software Development", "Software Engineering", "Application Development"],
-    "Testing": ["Testing", "Test Cases", "QA"],
-    "Unit Testing": ["Unit Testing", "Unit Tests"],
-    "Git": ["Git", "Version Control"],
-    "GitHub": ["GitHub"],
-    "CI/CD": ["CI/CD", "Continuous Integration", "Continuous Deployment"],
-    "Docker": ["Docker", "Containerization"],
-    "Kubernetes": ["Kubernetes", "K8s"],
-    "Linux": ["Linux", "Unix"],
-    "AWS": ["AWS", "Amazon Web Services"],
-    "Azure": ["Azure"],
-    "GCP": ["GCP", "Google Cloud"],
-    "PostgreSQL": ["PostgreSQL", "Postgres"],
-    "MySQL": ["MySQL"],
-    "MongoDB": ["MongoDB"],
-    "Database": ["Database", "Databases", "DBMS"],
-    "Agile": ["Agile", "Scrum"],
-    "HTML": ["HTML"],
-    "CSS": ["CSS"],
-    "Tailwind CSS": ["Tailwind CSS", "Tailwind"],
-    "Machine Learning": ["Machine Learning", "ML"],
-    "Embedded Systems": ["Embedded Systems", "Embedded"],
-    "Pydantic": ["Pydantic"],
-    "SQLAlchemy": ["SQLAlchemy"],
-}
-
-HARD_SKILL_KEYWORDS = {
-    "Python",
-    "C++",
-    "C",
-    "Java",
-    "SQL",
-    "JavaScript",
-    "TypeScript",
-    "React",
-    "Node.js",
-    "FastAPI",
-    "Flask",
-    "Django",
-    "REST API",
-    "Git",
-    "GitHub",
-    "CI/CD",
-    "Docker",
-    "Kubernetes",
-    "Linux",
-    "AWS",
-    "Azure",
-    "GCP",
-    "PostgreSQL",
-    "MySQL",
-    "MongoDB",
-    "Database",
-    "Testing",
-    "Unit Testing",
-    "HTML",
-    "CSS",
-    "Tailwind CSS",
-    "Machine Learning",
-    "Embedded Systems",
-    "Pydantic",
-    "SQLAlchemy",
-}
-
-CONCEPTUAL_KEYWORDS = {
-    "Data Structures",
-    "Algorithms",
-    "OOP",
-}
-
-PROJECT_CONTEXT_KEYWORDS = {
-    "Problem Solving",
-    "Debugging",
-    "Software Development",
-    "Agile",
-}
+from app.services.resume_analyzer import ResumeAnalyzer, _bounded_score, _sentence_snippet
+from app.services.keyword_library import (
+    classify_keyword,
+    extract_keywords_from_text,
+    text_contains_keyword,
+)
 
 
 @dataclass(frozen=True)
@@ -117,11 +25,11 @@ class ResumeTextSource:
 
 
 def _matches_keyword(text: str, keyword: str) -> bool:
-    return any(_exact_keyword_match(text, alias) for alias in JD_KEYWORD_ALIASES.get(keyword, [keyword]))
+    return text_contains_keyword(text, keyword)
 
 
 def _extract_jd_keywords(job_description: str) -> list[str]:
-    return [keyword for keyword in JD_KEYWORD_ALIASES if _matches_keyword(job_description, keyword)]
+    return extract_keywords_from_text(job_description)
 
 
 def _resume_sources(resume: Resume) -> Iterable[ResumeTextSource]:
@@ -199,14 +107,9 @@ def _has_course_or_project_context(resume: Resume) -> bool:
 
 def _suggestion_for_keyword(keyword: str, resume: Resume) -> MissingKeywordSuggestion:
     requires_real_knowledge = True
-    safe_to_add = False
-    suggested_locations = ["skills", "project bullet"]
-    reason = "Do not add this JD keyword unless it is truthful and backed by real knowledge or project evidence."
+    category = classify_keyword(keyword)
 
-    if keyword in HARD_SKILL_KEYWORDS:
-        suggested_locations = ["skills", "project technologies", "project bullet"]
-        reason = f"{keyword} is a concrete skill from the JD; keep it missing unless you actually know or used it."
-    elif keyword in CONCEPTUAL_KEYWORDS:
+    if category == "conceptual":
         suggested_locations = ["skills", "education coursework", "project bullet"]
         safe_to_add = _has_course_or_project_context(resume)
         reason = (
@@ -214,7 +117,7 @@ def _suggestion_for_keyword(keyword: str, resume: Resume) -> MissingKeywordSugge
             if safe_to_add
             else "Needs real coursework or project evidence before adding."
         )
-    elif keyword in PROJECT_CONTEXT_KEYWORDS:
+    elif category == "project_context":
         suggested_locations = ["summary", "project bullet", "experience bullet"]
         safe_to_add = _has_project_or_experience(resume)
         reason = (
@@ -222,6 +125,10 @@ def _suggestion_for_keyword(keyword: str, resume: Resume) -> MissingKeywordSugge
             if safe_to_add
             else "Needs project or experience evidence before adding."
         )
+    else:  # hard skill
+        suggested_locations = ["skills", "project technologies", "project bullet"]
+        safe_to_add = False
+        reason = f"{keyword} is a concrete skill from the JD; keep it missing unless you actually know or used it."
 
     return MissingKeywordSuggestion(
         keyword=keyword,

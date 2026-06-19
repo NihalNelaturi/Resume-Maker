@@ -128,9 +128,29 @@ def test_bullet_quality_checklist_and_section_breakdown_are_returned() -> None:
     assert weak_bullet.score < 10
     assert "weak verb" in weak_bullet.weakness_types
     assert "no metric" in weak_bullet.weakness_types
-    assert any("Add SQL only if I know SQL." == item.text for item in result.improvement_checklist)
-    assert any("Add Java only if I know Java." == item.text for item in result.improvement_checklist)
+    # The checklist is now generated generically from detected gaps, not from a
+    # hard-coded company/project. Missing hard skills surface as advisory items.
+    assert any(
+        item.text == "Add Java to skills only if you genuinely know it."
+        for item in result.improvement_checklist
+    )
+    assert any("measurable metric" in item.text for item in result.improvement_checklist)
     assert all(0 <= item.score <= 100 for item in result.section_score_breakdown)
+
+
+def test_keyword_targets_generalize_across_roles() -> None:
+    resume = make_resume()
+    analyzer = ResumeAnalyzer()
+
+    backend_keywords = [evidence.keyword for evidence in analyzer.analyze(resume, target_role="Backend Engineer").keyword_evidence]
+    frontend_keywords = [evidence.keyword for evidence in analyzer.analyze(resume, target_role="Frontend Developer").keyword_evidence]
+    data_keywords = [evidence.keyword for evidence in analyzer.analyze(resume, target_role="Data Analyst").keyword_evidence]
+
+    # No company hard-coding: a frontend role surfaces React, a data role SQL/Data Analysis.
+    assert "React" in frontend_keywords
+    assert "React" not in backend_keywords
+    assert "Data Analysis" in data_keywords
+    assert "Java" in backend_keywords
 
 
 def test_analyzer_detects_weak_bullets_and_missing_metrics() -> None:

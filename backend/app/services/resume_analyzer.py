@@ -16,35 +16,12 @@ from app.models.command_center_models import (
     SectionQualityIssue,
 )
 from app.models.resume_models import Resume
+from app.services.keyword_library import (
+    KEYWORD_ALIASES,
+    classify_keyword,
+    select_role_keywords,
+)
 
-
-INFOSYS_SOFTWARE_ENGINEER_KEYWORDS = [
-    "Python",
-    "C++",
-    "Java",
-    "SQL",
-    "Data Structures",
-    "Algorithms",
-    "OOP",
-    "Problem Solving",
-    "Debugging",
-    "Git",
-    "Software Development",
-    "REST API",
-]
-
-SOFTWARE_ENGINEER_KEYWORDS = [
-    "Python",
-    "JavaScript",
-    "SQL",
-    "Data Structures",
-    "Algorithms",
-    "OOP",
-    "Git",
-    "REST API",
-    "Testing",
-    "Debugging",
-]
 
 WEAK_VERB_PATTERN = re.compile(
     r"^\s*(worked|helped|used|built|responsible|assisted|participated|handled)\b",
@@ -93,16 +70,7 @@ def _bounded_score(value: float) -> int:
 
 
 def _keyword_aliases(keyword: str) -> list[str]:
-    aliases = {
-        "C++": ["c++", "cpp"],
-        "OOP": ["oop", "object oriented", "object-oriented"],
-        "REST API": ["rest api", "restful api", "restful", "fastapi"],
-        "Problem Solving": ["problem solving", "problem-solving", "solved"],
-        "Software Development": ["software development", "software engineering"],
-        "Data Structures": ["data structures", "data structure", "dsa"],
-        "Algorithms": ["algorithms", "algorithm", "dsa"],
-    }
-    return aliases.get(keyword, [keyword.lower()])
+    return [keyword.lower(), *KEYWORD_ALIASES.get(keyword, [])]
 
 
 def _canonical_keyword(keyword: str) -> str:
@@ -268,14 +236,11 @@ class ResumeAnalyzer:
             section_score_breakdown=section_score_breakdown,
         )
 
-    def _target_keywords(self, target_role: str, target_company: str) -> list[str]:
-        role = target_role.lower()
-        company = target_company.lower()
-        if "infosys" in company and "software" in role and "engineer" in role:
-            return INFOSYS_SOFTWARE_ENGINEER_KEYWORDS
-        if "software" in role and "engineer" in role:
-            return SOFTWARE_ENGINEER_KEYWORDS
-        return SOFTWARE_ENGINEER_KEYWORDS[:8]
+    def _target_keywords(self, target_role: str, target_company: str = "") -> list[str]:
+        # Keyword targets are derived from the role profile library, not from a
+        # hard-coded company/role. target_company is accepted for signature
+        # compatibility but no longer biases the keyword set.
+        return select_role_keywords(target_role)
 
     def _keyword_evidence(self, keywords: list[str], text_sources: list[TextSource]) -> list[KeywordEvidence]:
         evidence_rows: list[KeywordEvidence] = []
@@ -518,15 +483,10 @@ class ResumeAnalyzer:
 
         for keyword in missing_keywords:
             evidence = evidence_by_keyword.get(keyword)
-            locations: list[str] = []
-            safe_to_add = False
+            category = classify_keyword(keyword)
             requires_real_knowledge = True
-            reason = "Only add this keyword if it is truthful and backed by your real knowledge or experience."
 
-            if keyword in {"Java", "SQL"}:
-                locations = ["skills", "project bullet"]
-                reason = f"{keyword} is a concrete technical skill; do not add it unless you can use it in interviews."
-            elif keyword in {"Data Structures", "Algorithms", "OOP"}:
+            if category == "conceptual":
                 locations = ["skills", "education coursework", "project bullet"]
                 safe_to_add = self._has_coursework_or_project_support(resume, keyword, evidence)
                 reason = (
@@ -534,7 +494,7 @@ class ResumeAnalyzer:
                     if safe_to_add
                     else "This needs real coursework or project evidence before adding."
                 )
-            elif keyword in {"Problem Solving", "Debugging", "Software Development"}:
+            elif category == "project_context":
                 locations = ["professional summary", "project bullet", "experience bullet"]
                 safe_to_add = bool(resume.projects or resume.experience)
                 reason = (
@@ -542,16 +502,10 @@ class ResumeAnalyzer:
                     if safe_to_add
                     else "Needs project or experience evidence before adding."
                 )
-            elif keyword == "REST API":
-                locations = ["project technologies", "project bullet"]
-                safe_to_add = self._has_api_support(resume, evidence)
-                reason = (
-                    "Can be added only where existing API/framework work supports it."
-                    if safe_to_add
-                    else "Needs real REST API implementation experience before adding."
-                )
-            else:
-                locations = ["skills", "project bullet"]
+            else:  # hard skill
+                locations = ["skills", "project technologies", "project bullet"]
+                safe_to_add = False
+                reason = f"{keyword} is a concrete technical skill; do not add it unless you can use it in interviews."
 
             suggestions.append(
                 MissingKeywordSuggestion(
@@ -583,17 +537,6 @@ class ResumeAnalyzer:
         )
         return _alias_keyword_match(searchable, keyword) or _partial_keyword_match(searchable, keyword)
 
-    def _has_api_support(self, resume: Resume, evidence: KeywordEvidence | None) -> bool:
-        if evidence and evidence.found:
-            return True
-        searchable = " ".join(
-            [
-                *(technology for project in resume.projects for technology in project.technologies),
-                *(bullet for project in resume.projects for bullet in project.bullets),
-            ]
-        )
-        return bool(re.search(r"\b(api|fastapi|flask|django|endpoint|backend)\b", searchable, re.IGNORECASE))
-
     def _improvement_checklist(
         self,
         resume: Resume,
@@ -602,52 +545,58 @@ class ResumeAnalyzer:
         target_company: str,
     ) -> list[ImprovementChecklistItem]:
         checklist: list[ImprovementChecklistItem] = []
-        is_infosys_software_engineer = (
-            "infosys" in target_company.lower()
-            and "software" in target_role.lower()
-            and "engineer" in target_role.lower()
-        )
 
-        if is_infosys_software_engineer:
+        # Surface the top missing hard skills for the target role as advisory,
+        # truthfulness-gated items (no skill is ever added automatically).
+        missing_hard_skills = [kw for kw in missing_keywords if classify_keyword(kw) == "hard"][:3]
+        for keyword in missing_hard_skills:
             checklist.append(
                 ImprovementChecklistItem(
-                    text="Add SQL only if I know SQL.",
-                    priority="high" if "SQL" in missing_keywords else "low",
-                    completed="SQL" not in missing_keywords,
-                )
-            )
-            checklist.append(
-                ImprovementChecklistItem(
-                    text="Add Java only if I know Java.",
-                    priority="high" if "Java" in missing_keywords else "low",
-                    completed="Java" not in missing_keywords,
+                    text=f"Add {keyword} to skills only if you genuinely know it.",
+                    priority="high",
+                    completed=False,
                 )
             )
 
-        has_motor_fault_project = any(
-            "motor" in project.name.lower() and "fault" in project.name.lower() for project in resume.projects
+        if not resume.professional_summary:
+            checklist.append(
+                ImprovementChecklistItem(
+                    text="Add a professional summary aligned to the target role.",
+                    priority="medium",
+                    completed=False,
+                )
+            )
+
+        has_any_bullets = any(project.bullets for project in resume.projects) or any(
+            item.bullets for item in resume.experience
         )
         checklist.append(
             ImprovementChecklistItem(
-                text=(
-                    "Add one measurable metric to Motor Fault project."
-                    if has_motor_fault_project
-                    else "Add one measurable metric to Motor Fault project or the strongest technical project."
-                ),
+                text="Add at least one measurable metric to your strongest project or experience bullet.",
                 priority="high",
-                completed=any(_has_metric(bullet) for project in resume.projects for bullet in project.bullets),
+                completed=any(
+                    _has_metric(bullet)
+                    for project in resume.projects
+                    for bullet in project.bullets
+                )
+                or any(
+                    _has_metric(bullet)
+                    for item in resume.experience
+                    for bullet in item.bullets
+                )
+                or not has_any_bullets,
             )
         )
         checklist.append(
             ImprovementChecklistItem(
-                text="Strengthen achievements section.",
+                text="Strengthen the achievements section with specific, credible wins.",
                 priority="medium",
                 completed=bool(resume.achievements),
             )
         )
         checklist.append(
             ImprovementChecklistItem(
-                text="Keep resume to one page.",
+                text="Keep the resume to one page.",
                 priority="medium",
                 completed=True,
             )
