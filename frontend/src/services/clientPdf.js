@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { getTemplate } from "./pdfTemplates.js";
 
 const page = {
   width: 612,
@@ -10,11 +11,14 @@ const page = {
 
 const TEXT_COLOR = [24, 33, 47];
 const LINK_BLUE = [29, 78, 216];
-const SECTION_TOP_GAP = 6.2;
-const FIRST_SECTION_TOP_GAP = 0;
-const SECTION_BODY_GAP = 17;
-const HEADER_NAME_TO_CONTACT_GAP = 20;
-const HEADER_TO_FIRST_SECTION_GAP = 11.5;
+
+// Base spacing constants; scaled per-template by theme.density.
+const BASE = {
+  sectionTopGap: 6.2,
+  sectionBodyGap: 17,
+  nameToContactGap: 20,
+  headerToFirstSectionGap: 11.5,
+};
 
 function safeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -60,10 +64,12 @@ function contactItems(header) {
   return items;
 }
 
-function drawContactLine(doc, items, y, maxWidth) {
+function drawContactLine(ctx, items, y, maxWidth) {
+  const { doc, theme } = ctx;
   if (!items.length) return y;
 
-  const separator = " | ";
+  const separator = "  |  ";
+  const align = theme.headerAlign;
   const rows = [];
   let currentRow = [];
   let currentWidth = 0;
@@ -89,7 +95,7 @@ function drawContactLine(doc, items, y, maxWidth) {
       (sum, item, index) => sum + doc.getTextWidth(item.label) + (index ? doc.getTextWidth(separator) : 0),
       0,
     );
-    let x = page.width / 2 - rowWidth / 2;
+    let x = align === "left" ? page.marginX : page.width / 2 - rowWidth / 2;
 
     row.forEach((item, index) => {
       if (index) {
@@ -134,14 +140,15 @@ function addPageIfNeeded(doc, y, needed = 24) {
   return page.marginY;
 }
 
-function writeWrapped(doc, text, x, y, maxWidth, options = {}) {
+function writeWrapped(ctx, text, x, y, maxWidth, options = {}) {
+  const { doc, theme } = ctx;
   const {
     fontSize = 9.5,
     lineHeight = 12,
-    font = "helvetica",
     style = "normal",
     bullet = false,
   } = options;
+  const font = options.font || theme.font;
 
   const normalized = safeText(text);
   if (!normalized) return y;
@@ -149,14 +156,16 @@ function writeWrapped(doc, text, x, y, maxWidth, options = {}) {
   doc.setFont(font, style);
   doc.setFontSize(fontSize);
 
-  const textX = bullet ? x + 10 : x;
-  const lines = doc.splitTextToSize(normalized, maxWidth - (bullet ? 10 : 0));
+  const bulletIndent = 11;
+  const textX = bullet ? x + bulletIndent : x;
+  const lines = doc.splitTextToSize(normalized, maxWidth - (bullet ? bulletIndent : 0));
   let nextY = y;
 
   lines.forEach((line, index) => {
     nextY = addPageIfNeeded(doc, nextY, lineHeight);
     if (bullet && index === 0) {
-      doc.text("-", x, nextY);
+      // Real bullet glyph rather than a hyphen.
+      doc.text("•", x, nextY);
     }
     doc.text(line, textX, nextY);
     nextY += lineHeight;
@@ -165,20 +174,21 @@ function writeWrapped(doc, text, x, y, maxWidth, options = {}) {
   return nextY;
 }
 
-function writeLabeledWrapped(doc, label, text, x, y, maxWidth, options = {}) {
+function writeLabeledWrapped(ctx, label, text, x, y, maxWidth, options = {}) {
+  const { doc, theme } = ctx;
   const {
     fontSize = 9.4,
     lineHeight = 11.5,
     labelStyle = "bold",
     valueStyle = "normal",
-    font = "helvetica",
   } = options;
+  const font = options.font || theme.font;
   const normalizedLabel = safeText(label);
   const normalizedText = safeText(text);
 
   if (!normalizedLabel && !normalizedText) return y;
   if (!normalizedLabel) {
-    return writeWrapped(doc, normalizedText, x, y, maxWidth, { fontSize, lineHeight, font, style: valueStyle });
+    return writeWrapped(ctx, normalizedText, x, y, maxWidth, { fontSize, lineHeight, font, style: valueStyle });
   }
 
   doc.setFont(font, labelStyle);
@@ -209,41 +219,83 @@ function writeLabeledWrapped(doc, label, text, x, y, maxWidth, options = {}) {
   return nextY;
 }
 
-function sectionHeading(doc, title, y, { first = false } = {}) {
-  const topGap = first ? FIRST_SECTION_TOP_GAP : SECTION_TOP_GAP;
+function sectionHeading(ctx, title, y, { first = false } = {}) {
+  const { doc, theme, spacing } = ctx;
+  const topGap = first ? 0 : spacing.sectionTopGap;
   y = addPageIfNeeded(doc, y + topGap, 22);
-  doc.setTextColor(...TEXT_COLOR);
-  doc.setFont("helvetica", "bold");
+
+  const accent = theme.accent;
+  const headingColor = theme.headingStyle === "rule" ? TEXT_COLOR : accent;
+
+  if (theme.headingStyle === "filled") {
+    // Light accent band behind the heading text.
+    const bandHeight = 13;
+    doc.setFillColor(accent[0], accent[1], accent[2]);
+    doc.setGState && doc.setGState(new doc.GState({ opacity: 0.12 }));
+    doc.rect(page.marginX - 4, y - 9.5, page.width - page.marginX * 2 + 8, bandHeight, "F");
+    doc.setGState && doc.setGState(new doc.GState({ opacity: 1 }));
+  }
+
+  doc.setTextColor(...headingColor);
+  doc.setFont(theme.font, "bold");
   doc.setFontSize(10.9);
   doc.text(title.toUpperCase(), page.marginX, y);
-  doc.setLineWidth(0.6);
-  doc.line(page.marginX, y + 4, page.width - page.marginX, y + 4);
-  return y + SECTION_BODY_GAP;
+
+  if (theme.headingStyle !== "filled") {
+    const ruleColor = theme.headingStyle === "accentRule" ? accent : TEXT_COLOR;
+    doc.setDrawColor(ruleColor[0], ruleColor[1], ruleColor[2]);
+    doc.setLineWidth(theme.headingStyle === "accentRule" ? 0.9 : 0.6);
+    doc.line(page.marginX, y + 4, page.width - page.marginX, y + 4);
+    doc.setDrawColor(...TEXT_COLOR);
+  }
+
+  doc.setTextColor(...TEXT_COLOR);
+  return y + spacing.sectionBodyGap;
 }
 
-function rightText(doc, text, y) {
+function rightText(ctx, text, y) {
+  const { doc, theme } = ctx;
   const normalized = safeText(text);
   if (!normalized) return;
   doc.setTextColor(...TEXT_COLOR);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(theme.font, "normal");
   doc.setFontSize(9.3);
   doc.text(normalized, page.width - page.marginX, y, { align: "right" });
 }
 
-export function generateClientResumePdf(resume) {
+export function generateClientResumePdf(resume, options = {}) {
+  const template = getTemplate(options.templateId);
+  const theme = template.theme;
+  const density = theme.density || 1;
+  const spacing = {
+    sectionTopGap: BASE.sectionTopGap * density,
+    sectionBodyGap: BASE.sectionBodyGap * density,
+    nameToContactGap: BASE.nameToContactGap * density,
+    headerToFirstSectionGap: BASE.headerToFirstSectionGap * density,
+  };
+
   const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const ctx = { doc, theme, spacing };
   const maxWidth = page.width - page.marginX * 2;
+  // Per-section trailing gap scales with density too.
+  const blockGap = 3 * density;
   let y = page.marginY;
 
-  doc.setTextColor(...TEXT_COLOR);
-  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...(theme.nameColor || TEXT_COLOR));
+  doc.setFont(theme.font, "bold");
   doc.setFontSize(21);
-  doc.text(safeText(resume.header.full_name) || "Resume", page.width / 2, y, { align: "center" });
-  y += HEADER_NAME_TO_CONTACT_GAP;
+  const name = safeText(resume.header.full_name) || "Resume";
+  if (theme.headerAlign === "left") {
+    doc.text(name, page.marginX, y);
+  } else {
+    doc.text(name, page.width / 2, y, { align: "center" });
+  }
+  doc.setTextColor(...TEXT_COLOR);
+  y += spacing.nameToContactGap;
 
-  doc.setFont("helvetica", "normal");
+  doc.setFont(theme.font, "normal");
   doc.setFontSize(9.2);
-  y = drawContactLine(doc, contactItems(resume.header), y, maxWidth) + HEADER_TO_FIRST_SECTION_GAP;
+  y = drawContactLine(ctx, contactItems(resume.header), y, maxWidth) + spacing.headerToFirstSectionGap;
 
   const order = resume.section_order || [
     "professional_summary",
@@ -259,66 +311,66 @@ export function generateClientResumePdf(resume) {
 
   order.forEach((section) => {
     if (section === "professional_summary" && safeText(resume.professional_summary)) {
-      y = sectionHeading(doc, "Professional Summary", y, { first: renderedSections === 0 });
-      y = writeWrapped(doc, resume.professional_summary, page.marginX, y, maxWidth, { fontSize: 9.75, lineHeight: 11.7 });
-      y += 3;
+      y = sectionHeading(ctx, "Professional Summary", y, { first: renderedSections === 0 });
+      y = writeWrapped(ctx, resume.professional_summary, page.marginX, y, maxWidth, { fontSize: 9.75, lineHeight: 11.7 });
+      y += blockGap;
       renderedSections += 1;
     }
 
     if (section === "skills" && resume.skills?.length) {
-      y = sectionHeading(doc, "Skills", y, { first: renderedSections === 0 });
+      y = sectionHeading(ctx, "Skills", y, { first: renderedSections === 0 });
       resume.skills.forEach((skill) => {
         const items = (skill.items || []).map(safeText).filter(Boolean).join(", ");
-        y = writeLabeledWrapped(doc, skill.category, items, page.marginX, y, maxWidth, {
+        y = writeLabeledWrapped(ctx, skill.category, items, page.marginX, y, maxWidth, {
           fontSize: 9.45,
           lineHeight: 11.1,
         });
       });
-      y += 3;
+      y += blockGap;
       renderedSections += 1;
     }
 
     if (section === "experience" && resume.experience?.length) {
-      y = sectionHeading(doc, "Experience", y, { first: renderedSections === 0 });
+      y = sectionHeading(ctx, "Experience", y, { first: renderedSections === 0 });
       resume.experience.forEach((experience) => {
         y = addPageIfNeeded(doc, y, 24);
-        doc.setFont("helvetica", "bold");
+        doc.setFont(theme.font, "bold");
         doc.setFontSize(10.2);
         doc.text(joinPresent([experience.title, experience.company], ", "), page.marginX, y);
-        rightText(doc, dateRange(experience.start_date, experience.end_date), y);
+        rightText(ctx, dateRange(experience.start_date, experience.end_date), y);
         y += 11;
 
         if (experience.location) {
-          doc.setFont("helvetica", "normal");
+          doc.setFont(theme.font, "normal");
           doc.setFontSize(9.25);
           doc.text(safeText(experience.location), page.marginX, y);
           y += 9.8;
         }
 
         (experience.bullets || []).filter(safeText).forEach((bullet) => {
-          y = writeWrapped(doc, bullet, page.marginX + 4, y, maxWidth - 4, {
+          y = writeWrapped(ctx, bullet, page.marginX + 4, y, maxWidth - 4, {
             fontSize: 9.4,
             lineHeight: 11.35,
             bullet: true,
           });
         });
-        y += 3;
+        y += blockGap;
       });
       renderedSections += 1;
     }
 
     if (section === "projects" && resume.projects?.length) {
-      y = sectionHeading(doc, "Projects", y, { first: renderedSections === 0 });
+      y = sectionHeading(ctx, "Projects", y, { first: renderedSections === 0 });
       resume.projects.forEach((project) => {
         y = addPageIfNeeded(doc, y, 24);
-        doc.setFont("helvetica", "bold");
+        doc.setFont(theme.font, "bold");
         doc.setFontSize(10.2);
         doc.text(joinPresent([project.name, project.role], ", "), page.marginX, y);
-        rightText(doc, dateRange(project.start_date, project.end_date), y);
+        rightText(ctx, dateRange(project.start_date, project.end_date), y);
         y += 11;
 
         if (project.technologies?.length) {
-          y = writeWrapped(doc, project.technologies.map(safeText).filter(Boolean).join(", "), page.marginX, y, maxWidth, {
+          y = writeWrapped(ctx, project.technologies.map(safeText).filter(Boolean).join(", "), page.marginX, y, maxWidth, {
             fontSize: 9.15,
             lineHeight: 10.4,
             style: "italic",
@@ -326,35 +378,35 @@ export function generateClientResumePdf(resume) {
         }
 
         (project.bullets || []).filter(safeText).forEach((bullet) => {
-          y = writeWrapped(doc, bullet, page.marginX + 4, y, maxWidth - 4, {
+          y = writeWrapped(ctx, bullet, page.marginX + 4, y, maxWidth - 4, {
             fontSize: 9.4,
             lineHeight: 11.35,
             bullet: true,
           });
         });
-        y += 3;
+        y += blockGap;
       });
       renderedSections += 1;
     }
 
     if (section === "education" && resume.education?.length) {
-      y = sectionHeading(doc, "Education", y, { first: renderedSections === 0 });
+      y = sectionHeading(ctx, "Education", y, { first: renderedSections === 0 });
       resume.education.forEach((education) => {
         y = addPageIfNeeded(doc, y, 24);
-        doc.setFont("helvetica", "bold");
+        doc.setFont(theme.font, "bold");
         doc.setFontSize(10.2);
         doc.text(safeText(education.institution), page.marginX, y);
-        rightText(doc, dateRange(education.start_date, education.end_date), y);
+        rightText(ctx, dateRange(education.start_date, education.end_date), y);
         y += 11;
 
-        doc.setFont("helvetica", "normal");
+        doc.setFont(theme.font, "normal");
         doc.setFontSize(9.6);
         doc.text(joinPresent([education.degree, education.score]), page.marginX, y);
         y += 10.8;
 
         if (education.coursework?.length) {
           y = writeWrapped(
-            doc,
+            ctx,
             `Relevant Coursework: ${education.coursework.map(safeText).filter(Boolean).join(", ")}`,
             page.marginX,
             y,
@@ -362,13 +414,13 @@ export function generateClientResumePdf(resume) {
             { fontSize: 9.2, lineHeight: 10.8 },
           );
         }
-        y += 2;
+        y += 2 * density;
       });
       renderedSections += 1;
     }
 
     if (section === "certifications" && resume.certifications?.length) {
-      y = sectionHeading(doc, "Certifications", y, { first: renderedSections === 0 });
+      y = sectionHeading(ctx, "Certifications", y, { first: renderedSections === 0 });
       resume.certifications.forEach((certification) => {
         const text = joinPresent(
           [
@@ -379,18 +431,18 @@ export function generateClientResumePdf(resume) {
           ],
           ", ",
         );
-        y = writeWrapped(doc, text, page.marginX + 4, y, maxWidth - 4, {
+        y = writeWrapped(ctx, text, page.marginX + 4, y, maxWidth - 4, {
           fontSize: 9.35,
           lineHeight: 11.25,
           bullet: true,
         });
       });
-      y += 3;
+      y += blockGap;
       renderedSections += 1;
     }
 
     if (section === "achievements" && resume.achievements?.length) {
-      y = sectionHeading(doc, "Achievements", y, { first: renderedSections === 0 });
+      y = sectionHeading(ctx, "Achievements", y, { first: renderedSections === 0 });
       resume.achievements.forEach((achievement) => {
         const text = joinPresent(
           [
@@ -400,13 +452,13 @@ export function generateClientResumePdf(resume) {
           ],
           ": ",
         );
-        y = writeWrapped(doc, text, page.marginX + 4, y, maxWidth - 4, {
+        y = writeWrapped(ctx, text, page.marginX + 4, y, maxWidth - 4, {
           fontSize: 9.35,
           lineHeight: 11.25,
           bullet: true,
         });
       });
-      y += 3;
+      y += blockGap;
       renderedSections += 1;
     }
   });

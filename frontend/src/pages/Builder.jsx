@@ -14,10 +14,10 @@ import SectionScoreBreakdown from "../components/SectionScoreBreakdown.jsx";
 import TargetControls from "../components/TargetControls.jsx";
 import VersionManager from "../components/VersionManager.jsx";
 import { generateClientResumePdf } from "../services/clientPdf.js";
+import { PDF_TEMPLATES, DEFAULT_TEMPLATE_ID } from "../services/pdfTemplates.js";
 import {
   analyzeJobDescription,
   analyzeResume,
-  generateResumePdf,
   getApiErrorMessage,
   healthCheck,
   renderResumeLatex,
@@ -87,6 +87,13 @@ export default function Builder() {
   );
   const [pdfUrl, setPdfUrl] = useState("");
   const [pdfFilename, setPdfFilename] = useState(activeVersion?.generatedPdfName || "resume.pdf");
+  const [pdfTemplateId, setPdfTemplateId] = useState(() => {
+    try {
+      return localStorage.getItem("resmake-pdf-template") || DEFAULT_TEMPLATE_ID;
+    } catch {
+      return DEFAULT_TEMPLATE_ID;
+    }
+  });
 
   useEffect(() => {
     saveCommandCenterState({ profile, versions, activeVersionId });
@@ -395,7 +402,17 @@ export default function Builder() {
     }
   }
 
-  async function handleGenerate() {
+  function renderPdfWithTemplate(templateId) {
+    const { blob, filename } = generateClientResumePdf(cleanedResume, { templateId });
+    if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    const nextUrl = URL.createObjectURL(blob);
+    setPdfUrl(nextUrl);
+    setPdfFilename(filename);
+    touchActiveVersion({ generatedPdfName: filename });
+    return filename;
+  }
+
+  function handleGenerate() {
     if (missingRequiredHeader) {
       setMessage("PDF export needs at least a full name and valid email in the header.");
       return;
@@ -405,31 +422,29 @@ export default function Builder() {
     setMessage("");
 
     try {
-      const { blob, filename } = await generateResumePdf(cleanedResume);
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-      const nextUrl = URL.createObjectURL(blob);
-      setPdfUrl(nextUrl);
-      setPdfFilename(filename);
-      touchActiveVersion({ generatedPdfName: filename });
-      setMessage("PDF generated successfully.");
-    } catch (error) {
-      const errorMessage = getApiErrorMessage(error);
-      const canUseClientFallback =
-        !error?.response || (error?.response?.status === 503 && errorMessage.toLowerCase().includes("latex compiler"));
-
-      if (canUseClientFallback) {
-        const { blob, filename } = generateClientResumePdf(cleanedResume);
-        if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-        const nextUrl = URL.createObjectURL(blob);
-        setPdfUrl(nextUrl);
-        setPdfFilename(filename);
-        touchActiveVersion({ generatedPdfName: filename });
-        setMessage("PDF generated in the browser because the backend PDF service is unavailable.");
-      } else {
-        setMessage(errorMessage);
-      }
+      renderPdfWithTemplate(pdfTemplateId);
+      setMessage("PDF generated in your browser.");
+    } catch {
+      setMessage("Could not generate the PDF. Check that the resume has valid content and try again.");
     } finally {
       setIsGenerating(false);
+    }
+  }
+
+  function handleSelectTemplate(templateId) {
+    setPdfTemplateId(templateId);
+    try {
+      localStorage.setItem("resmake-pdf-template", templateId);
+    } catch {
+      // Ignore storage failures (e.g. private mode); selection still applies in-session.
+    }
+    // If a preview is already showing, re-render it with the new template immediately.
+    if (pdfUrl && !missingRequiredHeader) {
+      try {
+        renderPdfWithTemplate(templateId);
+      } catch {
+        setMessage("Could not re-render the preview with the selected template.");
+      }
     }
   }
 
@@ -661,8 +676,13 @@ export default function Builder() {
             <section className="section-panel">
               <h2 className="text-base font-bold text-slate-950">Export Actions</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Classic ATS export uses the backend first and falls back to browser PDF generation when needed.
+                PDF is generated instantly in your browser. Pick a template, then export or download.
               </p>
+              <TemplatePicker
+                templateId={pdfTemplateId}
+                disabled={isBusy}
+                onSelect={handleSelectTemplate}
+              />
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" className="btn-secondary" onClick={handleExportLatex} disabled={serverActionDisabled}>
                   <FileCode2 size={16} />
@@ -809,6 +829,41 @@ function WorkflowNav({ activeStep, onSelectStep }) {
         );
       })}
     </nav>
+  );
+}
+
+function TemplatePicker({ templateId, disabled, onSelect }) {
+  return (
+    <div className="mt-4">
+      <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">PDF Template</span>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {PDF_TEMPLATES.map((template) => {
+          const isActive = template.id === templateId;
+          const accent = `rgb(${template.theme.accent.join(",")})`;
+
+          return (
+            <button
+              key={template.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelect(template.id)}
+              className={`rounded-md border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                isActive
+                  ? "border-sky-300 bg-sky-50"
+                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: accent }} />
+                <span className="text-sm font-semibold text-slate-950">{template.name}</span>
+                {isActive ? <span className="badge ml-auto">Selected</span> : null}
+              </span>
+              <span className="mt-1 block text-xs text-slate-500">{template.description}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
