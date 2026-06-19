@@ -5,6 +5,7 @@ import BulletQualityTable from "../components/BulletQualityTable.jsx";
 import BulletRewritePanel from "../components/BulletRewritePanel.jsx";
 import ImprovementChecklist from "../components/ImprovementChecklist.jsx";
 import JobDescriptionAnalyzerPanel from "../components/JobDescriptionAnalyzerPanel.jsx";
+import JobMatchSuggestions from "../components/JobMatchSuggestions.jsx";
 import KeywordEvidenceTable from "../components/KeywordEvidenceTable.jsx";
 import MasterProfileEditor from "../components/MasterProfileEditor.jsx";
 import MissingKeywordSuggestions from "../components/MissingKeywordSuggestions.jsx";
@@ -294,6 +295,25 @@ export default function Builder() {
       },
       { rebuildResume: true },
     );
+    setAnalysis(null);
+  }
+
+  // Add a profile item into the active version WITHOUT clearing the JD analysis,
+  // so the "Tailor to this JD" suggestions persist while adding several items.
+  function addMatchToVersion(kind, id) {
+    if (kind === "project") {
+      const current = activeVersion.selectedProjectIds || [];
+      if (current.includes(id)) return;
+      updateActiveVersion({ selectedProjectIds: [...current, id] }, { rebuildResume: true });
+    } else if (kind === "experience") {
+      const current = activeVersion.selectedExperienceIds || [];
+      if (current.includes(id)) return;
+      updateActiveVersion({ selectedExperienceIds: [...current, id] }, { rebuildResume: true });
+    } else if (kind === "skill") {
+      const current = activeVersion.selectedSkillNames || [];
+      if (current.includes(id)) return;
+      updateActiveVersion({ selectedSkillNames: [...current, id] }, { rebuildResume: true });
+    }
     setAnalysis(null);
   }
 
@@ -590,6 +610,13 @@ export default function Builder() {
               isAnalyzing={isAnalyzingJobDescription}
               onChangeJobDescription={handleJobDescriptionChange}
               onAnalyzeJobDescription={handleAnalyzeJobDescription}
+            />
+            <JobMatchSuggestions
+              profile={profile}
+              version={activeVersion}
+              analysis={activeVersion.jobDescriptionAnalysis}
+              disabled={isBusy}
+              onAdd={addMatchToVersion}
             />
           </div>
         </WorkflowLayout>
