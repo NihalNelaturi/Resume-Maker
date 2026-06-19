@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import re
 
-
 # Canonical keyword -> list of accepted surface forms (aliases). The canonical
 # form is always included implicitly by the lookup helpers below.
 KEYWORD_ALIASES: dict[str, list[str]] = {

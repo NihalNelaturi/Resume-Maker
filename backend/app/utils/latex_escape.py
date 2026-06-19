@@ -4,7 +4,6 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 MULTISPACE = re.compile(r"[ \t]+")
 

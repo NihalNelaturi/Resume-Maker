@@ -1,0 +1,11 @@
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: FastAPI Depends() in defaults is intentional.
+# UP042: str+Enum is kept deliberately for stable JSON serialization.
+ignore = ["B008", "UP042"]
+
+[lint.per-file-ignores]
+"tests/*" = ["E501"]

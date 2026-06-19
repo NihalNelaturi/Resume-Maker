@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 import re
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
@@ -18,12 +18,11 @@ from app.models.command_center_models import (
     RewriteBulletsResponse,
 )
 from app.models.resume_models import DeleteResumeResponse, Resume, ResumeRecordResponse, ResumeSaveRequest
-from app.services.latex_compiler import LaTeXCompilationFailed, LaTeXCompilerError, LaTeXCompilerNotFound
 from app.services.bullet_rewriter import BulletRewriteEngine
 from app.services.job_description_analyzer import JobDescriptionAnalyzer
+from app.services.latex_compiler import LaTeXCompilationFailed, LaTeXCompilerError, LaTeXCompilerNotFound
 from app.services.resume_analyzer import ResumeAnalyzer
 from app.services.resume_builder import ResumeBuilder
-
 
 router = APIRouter(prefix="/api/resume", tags=["resume"])
 resume_builder = ResumeBuilder()
@@ -130,7 +129,7 @@ def update_resume(resume_id: str, request: ResumeSaveRequest, db: Session = Depe
     record = _get_resume_or_404(db, resume_id)
     record.title = request.title
     record.payload = request.resume.model_dump_json()
-    record.updated_at = datetime.utcnow()
+    record.updated_at = datetime.now(UTC)
 
     db.add(record)
     db.commit()

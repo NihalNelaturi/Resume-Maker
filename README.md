@@ -24,7 +24,11 @@ User
 - Add and remove skill groups, experience bullets, project bullets, projects, education, certifications, and achievements
 - Configurable resume section ordering
 - Live structured resume preview
-- PDF generation through the FastAPI backend
+- Instant in-browser PDF generation (primary engine) with selectable templates:
+  Classic, Modern Blue, Compact, and Elegant Serif
+- Optional LaTeX PDF generation through the FastAPI backend (local/Docker only)
+- Role-aware resume and job-description analysis driven by a data-driven keyword
+  library (no person- or company-specific hardcoding)
 - PDF preview and download in the frontend
 - Clickable email, GitHub, LinkedIn, and portfolio links in generated PDFs
 - SQLite draft persistence
@@ -139,6 +143,40 @@ To override it:
 $env:VITE_API_BASE_URL="http://127.0.0.1:8000"
 npm run dev
 ```
+
+## PDF Generation
+
+The frontend generates PDFs **in the browser** by default (jsPDF), so PDF export
+works instantly everywhere, including the Vercel deployment, with no LaTeX
+dependency. Pick a template in the Export step; the choice is remembered locally.
+
+The FastAPI backend also exposes a LaTeX-based generator (`/api/resume/generate`)
+that produces a more typographically refined PDF, but it requires `tectonic` or
+`pdflatex` and therefore only runs locally or in Docker — not on Vercel
+serverless.
+
+## Development
+
+Backend tests and lint:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+pytest -q
+ruff check .
+```
+
+Frontend build:
+
+```powershell
+cd frontend
+npm ci
+npm run build
+```
+
+Continuous integration (`.github/workflows/ci.yml`) runs backend ruff + pytest
+and a frontend production build on every push and pull request.
 
 ## API Endpoints
 

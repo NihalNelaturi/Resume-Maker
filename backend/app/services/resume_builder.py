@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -10,7 +10,6 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from app.models.resume_models import DEFAULT_SECTION_ORDER, Resume, SectionName
 from app.services.latex_compiler import LatexCompiler
 from app.utils.latex_escape import clean_data, escape_latex
-
 
 SECTION_TITLES = {
     SectionName.PROFESSIONAL_SUMMARY.value: "Professional Summary",
@@ -57,7 +56,9 @@ def _normalize_web_url(value: str | None) -> str | None:
     return _latex_href_target(cleaned)
 
 
-def _contact_items(raw_header: dict[str, Any], escaped_header: dict[str, Any]) -> dict[str, list[dict[str, str | None]]]:
+def _contact_items(
+    raw_header: dict[str, Any], escaped_header: dict[str, Any]
+) -> dict[str, list[dict[str, str | None]]]:
     items: list[dict[str, str | None]] = []
     links: list[dict[str, str | None]] = []
 

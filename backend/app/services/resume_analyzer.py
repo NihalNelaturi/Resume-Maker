@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from app.models.command_center_models import (
     AnalyzeResumeResponse,
@@ -12,8 +12,8 @@ from app.models.command_center_models import (
     KeywordEvidence,
     KeywordMatch,
     MissingKeywordSuggestion,
-    SectionScoreBreakdown,
     SectionQualityIssue,
+    SectionScoreBreakdown,
 )
 from app.models.resume_models import Resume
 from app.services.keyword_library import (
@@ -21,7 +21,6 @@ from app.services.keyword_library import (
     classify_keyword,
     select_role_keywords,
 )
-
 
 WEAK_VERB_PATTERN = re.compile(
     r"^\s*(worked|helped|used|built|responsible|assisted|participated|handled)\b",
@@ -177,8 +176,9 @@ class ResumeAnalyzer:
         text_sources = list(self._text_sources(resume))
         keyword_evidence = self._keyword_evidence(keywords, text_sources)
         keyword_matches = self._keyword_matches(keyword_evidence)
-        matched_keywords = [evidence.keyword for evidence in keyword_evidence if evidence.confidence in {"high", "medium"}]
-        missing_keywords = [evidence.keyword for evidence in keyword_evidence if evidence.confidence not in {"high", "medium"}]
+        strong = {"high", "medium"}
+        matched_keywords = [ev.keyword for ev in keyword_evidence if ev.confidence in strong]
+        missing_keywords = [ev.keyword for ev in keyword_evidence if ev.confidence not in strong]
         weak_bullets = self._weak_bullets(resume)
         missing_metrics = self._missing_metrics(resume)
         section_issues = self._section_issues(resume, missing_keywords, target_company, target_role)
@@ -464,7 +464,10 @@ class ResumeAnalyzer:
                 SectionQualityIssue(
                     section="target_fit",
                     severity="medium",
-                    message="Some target keywords are absent from the current resume data; show them as suggestions only.",
+                    message=(
+                        "Some target keywords are absent from the current resume data; "
+                        "show them as suggestions only."
+                    ),
                 )
             )
 

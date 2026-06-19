@@ -7,7 +7,6 @@ from typing import Protocol
 from app.models.command_center_models import BulletRewrite, RewriteBulletsResponse
 from app.models.resume_models import Project, Resume
 
-
 METRIC_SUGGESTION = "Add metric here if available: accuracy, latency, deployment speed, users, model size, etc."
 WEAK_VERBS = {
     "worked": "Analyzed",

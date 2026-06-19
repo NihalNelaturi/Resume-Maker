@@ -1,0 +1,7 @@
+# Normalize line endings: store text as LF in the repo, let Git handle checkout.
+* text=auto
+
+# Treat these as binary so Git never tries to normalize them.
+*.pdf binary
+*.png binary
+*.ico binary

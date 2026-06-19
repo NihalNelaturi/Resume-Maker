@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from app.models.command_center_models import (
     AnalyzeJobDescriptionResponse,
@@ -10,12 +10,12 @@ from app.models.command_center_models import (
     MissingKeywordSuggestion,
 )
 from app.models.resume_models import Resume
-from app.services.resume_analyzer import ResumeAnalyzer, _bounded_score, _sentence_snippet
 from app.services.keyword_library import (
     classify_keyword,
     extract_keywords_from_text,
     text_contains_keyword,
 )
+from app.services.resume_analyzer import ResumeAnalyzer, _bounded_score, _sentence_snippet
 
 
 @dataclass(frozen=True)
@@ -154,7 +154,8 @@ def _role_alignment_score(
     jd_target_keywords = [keyword for keyword in jd_keywords if keyword in target_keywords]
 
     if jd_target_keywords:
-        role_signal = len([keyword for keyword in jd_target_keywords if keyword in matched_keywords]) / len(jd_target_keywords)
+        hit = len([keyword for keyword in jd_target_keywords if keyword in matched_keywords])
+        role_signal = hit / len(jd_target_keywords)
     else:
         role_signal = len(matched_keywords) / len(jd_keywords)
 
