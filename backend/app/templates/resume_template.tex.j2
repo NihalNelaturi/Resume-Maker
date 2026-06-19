@@ -1,0 +1,119 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=0.38in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\definecolor{linkblue}{HTML}{1D4ED8}
+\usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue]{hyperref}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{array}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlength{\tabcolsep}{0pt}
+\renewcommand{\baselinestretch}{1.01}
+
+\titleformat{\section}{\normalsize\bfseries}{}{0em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{10.5pt}{5.5pt}
+
+\newcommand{\resumeContact}[1]{{\fontsize{8.45}{9.45}\selectfont #1}}
+\newcommand{\resumeLine}[1]{{\fontsize{9.8}{11.45}\selectfont #1}}
+\newcommand{\resumeMeta}[1]{{\fontsize{9.25}{10.6}\selectfont #1}}
+\newcommand{\resumeDate}[1]{{\fontsize{9.35}{10.4}\selectfont #1}}
+\newcommand{\resumeBullet}[1]{\item {\fontsize{9.45}{11.15}\selectfont #1}}
+\newcommand{\resumeSubheading}[4]{
+  \textbf{#1} \hfill {\small #2}\\
+  {\small #3} \hfill {\small #4}\\[-1pt]
+}
+\newcommand{\contactSep}{\hspace{0.35em}\textbar\hspace{0.35em}}
+
+\begin{document}
+\fontsize{9.55}{10.95}\selectfont
+
+\begin{center}
+  {\Large \textbf{((( resume.header.full_name )))}}\\[1.5pt]
+  \resumeContact{
+    ((* for item in resume.header.primary_contact_items *))((* if not loop.first *))\contactSep{}((* endif *))((* if item.href *))\href{((( item.href )))}{((( item.label )))}((* else *))((( item.label )))((* endif *))((* endfor *))
+  }\\[1pt]
+  \resumeContact{
+    ((* for item in resume.header.link_contact_items *))((* if not loop.first *))\contactSep{}((* endif *))\href{((( item.href )))}{((( item.label )))}((* endfor *))
+  }
+\end{center}
+\vspace{1.5pt}
+
+((* for section in resume.ordered_sections *))
+((* if section == "professional_summary" *))
+\section*{Professional Summary}
+\resumeLine{((( resume.professional_summary )))}
+
+((* elif section == "skills" *))
+\section*{Skills}
+((* for skill in resume.skills *))
+\resumeMeta{\textbf{((( skill.category )))}:~((( skill["items"] | join(", ") ))) }\\[0pt]
+((* endfor *))
+
+((* elif section == "experience" *))
+\section*{Experience}
+((* for experience in resume.experience *))
+\textbf{((( experience.title )))}, ((( experience.company ))) \hfill \resumeDate{((* if experience.start_date *))((( experience.start_date )))((* endif *))((* if experience.end_date *)) - ((( experience.end_date )))((* endif *))}\\[-1pt]
+((* if experience.location *))
+\resumeMeta{((( experience.location ))) }\\[-3pt]
+((* else *))
+\vspace{-3pt}
+((* endif *))
+\begin{itemize}[leftmargin=0.15in,itemsep=0.6pt,topsep=1.5pt,parsep=0pt,partopsep=0pt]
+((* for bullet in experience.bullets *))
+  \resumeBullet{((( bullet )))}
+((* endfor *))
+\end{itemize}
+((* endfor *))
+
+((* elif section == "projects" *))
+\section*{Projects}
+((* for project in resume.projects *))
+\textbf{((( project.name )))}((* if project.role *)), ((( project.role )))((* endif *)) \hfill \resumeDate{((* if project.start_date *))((( project.start_date )))((* endif *))((* if project.end_date *)) - ((( project.end_date )))((* endif *))}\\[-1pt]
+((* if project.technologies *))
+\resumeMeta{\textit{((( project.technologies | join(", ") )))}}\\[-3pt]
+((* else *))
+\vspace{-3pt}
+((* endif *))
+\begin{itemize}[leftmargin=0.15in,itemsep=0.6pt,topsep=1.5pt,parsep=0pt,partopsep=0pt]
+((* for bullet in project.bullets *))
+  \resumeBullet{((( bullet )))}
+((* endfor *))
+\end{itemize}
+((* endfor *))
+
+((* elif section == "education" *))
+\section*{Education}
+((* for edu in resume.education *))
+\textbf{((( edu.institution )))} \hfill \resumeDate{((* if edu.start_date *))((( edu.start_date )))((* endif *))((* if edu.end_date *)) - ((( edu.end_date )))((* endif *))}\\[-1pt]
+\resumeLine{((( edu.degree )))((* if edu.score *)) \space|\space ((( edu.score )))((* endif *))}\\[-1pt]
+((* if edu.coursework *))
+\resumeMeta{\textbf{Relevant Coursework:}\space ((( edu.coursework | join(", ") ))) }\\[-1pt]
+((* endif *))
+((* endfor *))
+
+((* elif section == "certifications" *))
+\section*{Certifications}
+\begin{itemize}[leftmargin=0.15in,itemsep=0.6pt,topsep=1.5pt,parsep=0pt,partopsep=0pt]
+((* for cert in resume.certifications *))
+  \resumeBullet{\textbf{((( cert.title )))}((* if cert.issuer *)), ((( cert.issuer )))((* endif *))((* if cert.date *)) \hfill ((( cert.date )))((* endif *))((* if cert.link *)), \href{((( cert.link )))}{((( cert.link )))}((* endif *))}
+((* endfor *))
+\end{itemize}
+
+((* elif section == "achievements" *))
+\section*{Achievements}
+\begin{itemize}[leftmargin=0.15in,itemsep=0.6pt,topsep=1.5pt,parsep=0pt,partopsep=0pt]
+((* for achievement in resume.achievements *))
+  \resumeBullet{\textbf{((( achievement.title )))}((* if achievement.date *)), ((( achievement.date )))((* endif *))((* if achievement.description *)): ((( achievement.description )))((* endif *))}
+((* endfor *))
+\end{itemize}
+((* endif *))
+((* endfor *))
+
+\end{document}

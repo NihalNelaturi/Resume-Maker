@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: resume-maker-backend
+    environment:
+      DATABASE_URL: sqlite:////data/resume_maker.db
+      CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:3000,http://localhost:3000
+    ports:
+      - "8000:8000"
+    volumes:
+      - resume_data:/data
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://127.0.0.1:8000
+    container_name: resume-maker-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  resume_data:
+
