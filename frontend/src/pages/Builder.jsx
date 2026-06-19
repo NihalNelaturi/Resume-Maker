@@ -528,6 +528,7 @@ export default function Builder() {
           title="Your Profile"
           description="Keep the source profile truthful and complete. Resume versions only select from this data."
         >
+          {profileIsEmpty ? <OnboardingCard /> : null}
           <MasterProfileEditor profile={profile} onChange={updateMasterProfile} />
         </WorkflowLayout>
       );
@@ -829,6 +830,37 @@ function WorkflowNav({ activeStep, onSelectStep }) {
         );
       })}
     </nav>
+  );
+}
+
+function OnboardingCard() {
+  const steps = [
+    "Fill in your profile: header, summary, skills, experience, projects, and education.",
+    "Create a resume version and pick which projects, experience, and skills to include.",
+    "Set a target role (and optionally paste a job description) to analyze fit.",
+    "Run Analyze & Rewrite, then export a PDF using your preferred template.",
+  ];
+
+  return (
+    <section className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-panel">
+      <h3 className="text-base font-bold text-sky-950">Welcome to your Resume Command Center</h3>
+      <p className="mt-1 text-sm text-sky-900">
+        Your profile is the single source of truth. Everything else selects from it. Here is the flow:
+      </p>
+      <ol className="mt-3 space-y-1.5">
+        {steps.map((step, index) => (
+          <li key={index} className="flex gap-2 text-sm text-sky-900">
+            <span className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-sky-700 text-xs font-bold text-white">
+              {index + 1}
+            </span>
+            <span>{step}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 text-xs text-sky-800">
+        Tip: your data is saved only in this browser. Use Export Backup in the Export step to keep a copy.
+      </p>
+    </section>
   );
 }
 
