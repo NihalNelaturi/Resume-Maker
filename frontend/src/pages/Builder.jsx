@@ -438,13 +438,19 @@ export default function Builder() {
     } catch {
       // Ignore storage failures (e.g. private mode); selection still applies in-session.
     }
-    // If a preview is already showing, re-render it with the new template immediately.
-    if (pdfUrl && !missingRequiredHeader) {
-      try {
-        renderPdfWithTemplate(templateId);
-      } catch {
-        setMessage("Could not re-render the preview with the selected template.");
-      }
+
+    // Render a live PDF preview in the chosen template. The first selection
+    // generates the preview; later selections update it instantly. Templates
+    // only affect the PDF (the structured HTML preview is template-independent).
+    if (missingRequiredHeader) {
+      setMessage("Add a full name and valid email in the header to preview a template.");
+      return;
+    }
+
+    try {
+      renderPdfWithTemplate(templateId);
+    } catch {
+      setMessage("Could not render the preview with the selected template.");
     }
   }
 
