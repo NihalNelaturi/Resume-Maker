@@ -402,8 +402,8 @@ export default function Builder() {
     }
   }
 
-  function renderPdfWithTemplate(templateId) {
-    const { blob, filename } = generateClientResumePdf(cleanedResume, { templateId });
+  async function renderPdfWithTemplate(templateId) {
+    const { blob, filename } = await generateClientResumePdf(cleanedResume, { templateId });
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     const nextUrl = URL.createObjectURL(blob);
     setPdfUrl(nextUrl);
@@ -412,7 +412,7 @@ export default function Builder() {
     return filename;
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
     if (missingRequiredHeader) {
       setMessage("PDF export needs at least a full name and valid email in the header.");
       return;
@@ -422,7 +422,7 @@ export default function Builder() {
     setMessage("");
 
     try {
-      renderPdfWithTemplate(pdfTemplateId);
+      await renderPdfWithTemplate(pdfTemplateId);
       setMessage("PDF generated in your browser.");
     } catch {
       setMessage("Could not generate the PDF. Check that the resume has valid content and try again.");
@@ -431,7 +431,7 @@ export default function Builder() {
     }
   }
 
-  function handleSelectTemplate(templateId) {
+  async function handleSelectTemplate(templateId) {
     setPdfTemplateId(templateId);
     try {
       localStorage.setItem("resmake-pdf-template", templateId);
@@ -447,10 +447,13 @@ export default function Builder() {
       return;
     }
 
+    setIsGenerating(true);
     try {
-      renderPdfWithTemplate(templateId);
+      await renderPdfWithTemplate(templateId);
     } catch {
       setMessage("Could not render the preview with the selected template.");
+    } finally {
+      setIsGenerating(false);
     }
   }
 

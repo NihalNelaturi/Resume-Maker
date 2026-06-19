@@ -1,6 +1,60 @@
 import { jsPDF } from "jspdf";
 import { getTemplate } from "./pdfTemplates.js";
 
+// Embedded Unicode fonts. jsPDF's built-in fonts are Latin-1 only and render
+// non-Latin text (Greek, Cyrillic, accented characters) as garbage, so we
+// register DejaVu TTFs that cover those scripts. Fonts are fetched once from
+// /fonts and cached; PDFs are subsetted to keep file size small.
+const FONT_FAMILIES = {
+  sans: {
+    name: "DejaVuSans",
+    normal: "/fonts/DejaVuSans.ttf",
+    bold: "/fonts/DejaVuSans-Bold.ttf",
+  },
+  serif: {
+    name: "DejaVuSerif",
+    normal: "/fonts/DejaVuSerif.ttf",
+    bold: "/fonts/DejaVuSerif-Bold.ttf",
+  },
+};
+
+const fontBase64Cache = new Map();
+
+function arrayBufferToBase64(buffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function fetchFontBase64(url) {
+  if (fontBase64Cache.has(url)) return fontBase64Cache.get(url);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to load font ${url} (HTTP ${response.status})`);
+  }
+  const base64 = arrayBufferToBase64(await response.arrayBuffer());
+  fontBase64Cache.set(url, base64);
+  return base64;
+}
+
+async function registerFontFamily(doc, familyKey) {
+  const family = FONT_FAMILIES[familyKey] || FONT_FAMILIES.sans;
+  const [normalB64, boldB64] = await Promise.all([
+    fetchFontBase64(family.normal),
+    fetchFontBase64(family.bold),
+  ]);
+
+  doc.addFileToVFS(`${family.name}.ttf`, normalB64);
+  doc.addFont(`${family.name}.ttf`, family.name, "normal");
+  doc.addFileToVFS(`${family.name}-Bold.ttf`, boldB64);
+  doc.addFont(`${family.name}-Bold.ttf`, family.name, "bold");
+  return family.name;
+}
+
 const page = {
   width: 612,
   height: 792,
@@ -263,10 +317,10 @@ function rightText(ctx, text, y) {
   doc.text(normalized, page.width - page.marginX, y, { align: "right" });
 }
 
-export function generateClientResumePdf(resume, options = {}) {
+export async function generateClientResumePdf(resume, options = {}) {
   const template = getTemplate(options.templateId);
-  const theme = template.theme;
-  const density = theme.density || 1;
+  const baseTheme = template.theme;
+  const density = baseTheme.density || 1;
   const spacing = {
     sectionTopGap: BASE.sectionTopGap * density,
     sectionBodyGap: BASE.sectionBodyGap * density,
@@ -274,7 +328,11 @@ export function generateClientResumePdf(resume, options = {}) {
     headerToFirstSectionGap: BASE.headerToFirstSectionGap * density,
   };
 
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const doc = new jsPDF({ unit: "pt", format: "letter", putOnlyUsedFonts: true, compress: true });
+  // Register the Unicode font family and use its registered name everywhere.
+  const fontName = await registerFontFamily(doc, baseTheme.font === "serif" ? "serif" : "sans");
+  doc.setFont(fontName, "normal");
+  const theme = { ...baseTheme, font: fontName };
   const ctx = { doc, theme, spacing };
   const maxWidth = page.width - page.marginX * 2;
   // Per-section trailing gap scales with density too.
@@ -373,7 +431,6 @@ export function generateClientResumePdf(resume, options = {}) {
           y = writeWrapped(ctx, project.technologies.map(safeText).filter(Boolean).join(", "), page.marginX, y, maxWidth, {
             fontSize: 9.15,
             lineHeight: 10.4,
-            style: "italic",
           });
         }
 
