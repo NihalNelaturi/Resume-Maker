@@ -43,6 +43,8 @@ import {
   resumeFromProfileVersion,
   updateResumeBullet,
 } from "../services/resumeTransforms.js";
+import ImportResumePanel from "../components/ImportResumePanel.jsx";
+import { extractTextFromFile, parseResumeText, summarizeImport } from "../services/resumeImport.js";
 
 function toggleValue(list, value) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -81,6 +83,7 @@ export default function Builder() {
   const [isAnalyzingJobDescription, setIsAnalyzingJobDescription] = useState(false);
   const [isRewriting, setIsRewriting] = useState(false);
   const [isExportingLatex, setIsExportingLatex] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [message, setMessage] = useState(() =>
     initialState.recoveredFromCorruption
       ? "Saved local data was unreadable or contained legacy sample content, so the command center loaded a clean profile safely."
@@ -139,7 +142,13 @@ export default function Builder() {
   const allSkillNames = useMemo(() => getAllSkillNames(profile), [profile]);
   const cleanedResume = useMemo(() => removeEmptyOptionalFields(resume), [resume]);
   const isBusy =
-    isGenerating || isSaving || isAnalyzing || isAnalyzingJobDescription || isRewriting || isExportingLatex;
+    isGenerating ||
+    isSaving ||
+    isAnalyzing ||
+    isAnalyzingJobDescription ||
+    isRewriting ||
+    isExportingLatex ||
+    isImporting;
   const backendReady = apiStatus === "online";
   const backendOffline = apiStatus === "offline";
   const missingRequiredHeader = !hasText(cleanedResume.header?.full_name) || !hasText(cleanedResume.header?.email);
@@ -576,6 +585,104 @@ export default function Builder() {
     }
   }
 
+  function mergeImportedProfile(existing, parsed) {
+    const personal = { ...existing.personal };
+    Object.keys(parsed.personal).forEach((key) => {
+      if (!hasText(personal[key]) && hasText(parsed.personal[key])) personal[key] = parsed.personal[key];
+    });
+
+    const skills = { ...existing.skills };
+    Object.entries(parsed.skills).forEach(([category, items]) => {
+      skills[category] = [...new Set([...(skills[category] || []), ...items])];
+    });
+
+    return {
+      ...existing,
+      personal,
+      skills,
+      experience: [...existing.experience, ...parsed.experience],
+      projects: [...existing.projects, ...parsed.projects],
+      education: [...existing.education, ...parsed.education],
+      certifications: [...existing.certifications, ...parsed.certifications],
+      achievements: [...existing.achievements, ...parsed.achievements],
+      bulletBank: existing.bulletBank || {},
+    };
+  }
+
+  function applyParsedResume(text, sourceLabel) {
+    const parsed = parseResumeText(text);
+    const summary = summarizeImport(parsed);
+    const totalItems =
+      summary.experience + summary.projects + summary.education + summary.skills + summary.certifications;
+
+    if (!summary.hasName && !summary.hasEmail && totalItems === 0) {
+      setMessage(
+        `Could not extract resume content from ${sourceLabel}. Try a different file, or paste the resume text directly.`,
+      );
+      return;
+    }
+
+    if (!profileIsEmpty) {
+      const confirmed = window.confirm(
+        "Import will merge the extracted resume into your current profile (appending new items). Continue?",
+      );
+      if (!confirmed) return;
+    }
+
+    const mergedProfile = mergeImportedProfile(profile, parsed);
+    const nextState = normalizeCommandCenterState({ profile: mergedProfile, versions, activeVersionId });
+
+    // Select every item into the active version so the import is visible immediately.
+    const allProjectIds = nextState.profile.projects.map((project) => project.id);
+    const allExperienceIds = nextState.profile.experience.map((item) => item.id);
+    const allSkillNames = getAllSkillNames(nextState.profile);
+    nextState.versions = nextState.versions.map((version) =>
+      version.id === nextState.activeVersionId
+        ? {
+            ...version,
+            selectedProjectIds: allProjectIds,
+            selectedExperienceIds: allExperienceIds,
+            selectedSkillNames: allSkillNames,
+          }
+        : version,
+    );
+
+    saveCommandCenterState(nextState);
+    applyCommandCenterState(nextState);
+    setActiveStep("profile");
+    setMessage(
+      `Imported from ${sourceLabel}: ${summary.experience} experience, ${summary.projects} projects, ` +
+        `${summary.education} education, ${summary.skills} skills, ${summary.certifications} certifications. ` +
+        "Review and edit everything for accuracy.",
+    );
+  }
+
+  async function importResumeFile(file) {
+    if (isBusy) return;
+    setIsImporting(true);
+    setMessage("");
+    try {
+      const text = await extractTextFromFile(file);
+      applyParsedResume(text, file.name);
+    } catch {
+      setMessage(
+        "Could not read that file. Supported formats: PDF, DOCX, TXT, MD. For scanned/image PDFs, paste the text instead.",
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  function importResumeText(text) {
+    if (isBusy) return;
+    if (!hasText(text)) {
+      setMessage("Paste your resume text first, then import.");
+      return;
+    }
+    setMessage("");
+    applyParsedResume(text, "pasted text");
+  }
+
   function resetLocalData() {
     if (isBusy) return;
     const confirmed = window.confirm(
@@ -597,6 +704,12 @@ export default function Builder() {
           description="Keep the source profile truthful and complete. Resume versions only select from this data."
         >
           {profileIsEmpty ? <OnboardingCard /> : null}
+          <ImportResumePanel
+            disabled={isBusy}
+            isImporting={isImporting}
+            onImportFile={importResumeFile}
+            onImportText={importResumeText}
+          />
           <MasterProfileEditor profile={profile} onChange={updateMasterProfile} />
         </WorkflowLayout>
       );

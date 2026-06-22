@@ -22,6 +22,7 @@ User
 - Structured resume builder form
 - Header, summary, skills, experience, projects, education, certifications, and achievements
 - Add and remove skill groups, experience bullets, project bullets, projects, education, certifications, and achievements
+- Import an existing resume (PDF / DOCX / TXT / paste) to auto-fill the profile
 - Configurable resume section ordering
 - Live structured resume preview
 - Instant in-browser PDF generation (primary engine) with six selectable
