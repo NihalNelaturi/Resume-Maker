@@ -86,6 +86,21 @@ export const PDF_TEMPLATES = [
       density: 1.0,
     },
   },
+  {
+    id: "professional",
+    name: "Professional",
+    description: "Centered serif header with navy underlined headings and stacked entries. Formal, ATS-safe.",
+    theme: {
+      font: "serif",
+      headerAlign: "center",
+      headingStyle: "underline",
+      headerRule: true,
+      entryStyle: "stacked",
+      accent: [44, 62, 80], // navy slate
+      nameColor: [44, 62, 80],
+      density: 1.05,
+    },
+  },
 ];
 
 export const DEFAULT_TEMPLATE_ID = "classic";

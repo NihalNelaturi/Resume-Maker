@@ -273,6 +273,8 @@ function writeLabeledWrapped(ctx, label, text, x, y, maxWidth, options = {}) {
   return nextY;
 }
 
+const SEPARATOR_COLOR = [214, 219, 226];
+
 function sectionHeading(ctx, title, y, { first = false } = {}) {
   const { doc, theme, page, fs, spacing } = ctx;
   const topGap = first ? 0 : spacing.sectionTopGap;
@@ -280,6 +282,27 @@ function sectionHeading(ctx, title, y, { first = false } = {}) {
 
   const accent = theme.accent;
   const headingColor = theme.headingStyle === "rule" ? TEXT_COLOR : accent;
+
+  // Bold uppercase heading with a thick accent underline, and a faint separator
+  // between sections (the previous section's visual bottom rule).
+  if (theme.headingStyle === "underline") {
+    if (!first) {
+      doc.setDrawColor(...SEPARATOR_COLOR);
+      doc.setLineWidth(0.6);
+      const sepY = y - spacing.sectionTopGap * 0.5;
+      doc.line(page.marginX, sepY, page.width - page.marginX, sepY);
+    }
+    doc.setTextColor(...accent);
+    doc.setFont(theme.font, "bold");
+    doc.setFontSize(11.6 * fs);
+    doc.text(title.toUpperCase(), page.marginX, y);
+    doc.setDrawColor(...accent);
+    doc.setLineWidth(1.5);
+    doc.line(page.marginX, y + 4.5 * fs, page.width - page.marginX, y + 4.5 * fs);
+    doc.setDrawColor(...TEXT_COLOR);
+    doc.setTextColor(...TEXT_COLOR);
+    return y + spacing.sectionBodyGap;
+  }
 
   if (theme.headingStyle === "filled") {
     const bandHeight = 13 * fs;
@@ -316,6 +339,33 @@ function rightText(ctx, text, y) {
   doc.text(normalized, page.width - page.marginX, y, { align: "right" });
 }
 
+// Stacked entry header: a bold title on the first line, then a subtitle on the
+// left with a right-aligned accent-colored date/meta on the second line. Used
+// by templates with theme.entryStyle === "stacked".
+function stackedEntry(ctx, { title, subtitle, date }, y) {
+  const { doc, theme, page, fs, adv } = ctx;
+  doc.setTextColor(...TEXT_COLOR);
+  doc.setFont(theme.font, "bold");
+  doc.setFontSize(10.5 * fs);
+  if (safeText(title)) doc.text(safeText(title), page.marginX, y);
+  y += 11.5 * adv;
+
+  const sub = safeText(subtitle);
+  const meta = safeText(date);
+  if (sub || meta) {
+    doc.setFont(theme.font, "bold");
+    doc.setFontSize(9.4 * fs);
+    if (sub) doc.text(sub, page.marginX, y);
+    if (meta) {
+      doc.setTextColor(...(theme.accent || TEXT_COLOR));
+      doc.text(meta, page.width - page.marginX, y, { align: "right" });
+      doc.setTextColor(...TEXT_COLOR);
+    }
+    y += 11 * adv;
+  }
+  return y;
+}
+
 // Draws the whole resume into `doc`. `fs` scales fonts, `adv` scales per-line
 // vertical advances (line heights), and `gap` scales the structural gaps
 // between sections/entries. Splitting `adv` from `gap` lets auto-fit fill a
@@ -347,7 +397,20 @@ function renderResume(doc, resume, theme, page, fs, adv, gap) {
 
   doc.setFont(theme.font, "normal");
   doc.setFontSize(9.2 * fs);
-  y = drawContactLine(ctx, contactItems(resume.header), y, maxWidth) + spacing.headerToFirstSectionGap;
+  y = drawContactLine(ctx, contactItems(resume.header), y, maxWidth);
+
+  // Optional full-width rule under the header (used by templates with a
+  // centered serif header).
+  if (theme.headerRule) {
+    const ruleY = y + 5 * gap;
+    doc.setDrawColor(...(theme.accent || TEXT_COLOR));
+    doc.setLineWidth(1.1);
+    doc.line(page.marginX, ruleY, page.width - page.marginX, ruleY);
+    doc.setDrawColor(...TEXT_COLOR);
+    y = ruleY + spacing.headerToFirstSectionGap;
+  } else {
+    y += spacing.headerToFirstSectionGap;
+  }
 
   const order = resume.section_order || [
     "professional_summary",
@@ -373,10 +436,15 @@ function renderResume(doc, resume, theme, page, fs, adv, gap) {
       y = sectionHeading(ctx, "Skills", y, { first: renderedSections === 0 });
       resume.skills.forEach((skill) => {
         const items = (skill.items || []).map(safeText).filter(Boolean).join(", ");
-        y = writeLabeledWrapped(ctx, skill.category, items, page.marginX, y, maxWidth, {
-          fontSize: 9.45,
-          lineHeight: 11.1,
-        });
+        const genericCategory = !safeText(skill.category) || /^skills?$/i.test(safeText(skill.category));
+        if (theme.entryStyle === "stacked" && genericCategory) {
+          y = writeWrapped(ctx, items, page.marginX, y, maxWidth, { fontSize: 9.5, lineHeight: 11.2 });
+        } else {
+          y = writeLabeledWrapped(ctx, skill.category, items, page.marginX, y, maxWidth, {
+            fontSize: 9.45,
+            lineHeight: 11.1,
+          });
+        }
       });
       y += blockGap;
       renderedSections += 1;
@@ -386,17 +454,29 @@ function renderResume(doc, resume, theme, page, fs, adv, gap) {
       y = sectionHeading(ctx, "Experience", y, { first: renderedSections === 0 });
       resume.experience.forEach((experience) => {
         y = addPageIfNeeded(ctx, y, 24 * adv);
-        doc.setFont(theme.font, "bold");
-        doc.setFontSize(10.2 * fs);
-        doc.text(joinPresent([experience.title, experience.company], ", "), page.marginX, y);
-        rightText(ctx, dateRange(experience.start_date, experience.end_date), y);
-        y += 11 * adv;
+        if (theme.entryStyle === "stacked") {
+          y = stackedEntry(
+            ctx,
+            {
+              title: experience.title,
+              subtitle: experience.company,
+              date: joinPresent([dateRange(experience.start_date, experience.end_date), experience.location], ", "),
+            },
+            y,
+          );
+        } else {
+          doc.setFont(theme.font, "bold");
+          doc.setFontSize(10.2 * fs);
+          doc.text(joinPresent([experience.title, experience.company], ", "), page.marginX, y);
+          rightText(ctx, dateRange(experience.start_date, experience.end_date), y);
+          y += 11 * adv;
 
-        if (experience.location) {
-          doc.setFont(theme.font, "normal");
-          doc.setFontSize(9.25 * fs);
-          doc.text(safeText(experience.location), page.marginX, y);
-          y += 9.8 * adv;
+          if (experience.location) {
+            doc.setFont(theme.font, "normal");
+            doc.setFontSize(9.25 * fs);
+            doc.text(safeText(experience.location), page.marginX, y);
+            y += 9.8 * adv;
+          }
         }
 
         (experience.bullets || []).filter(safeText).forEach((bullet) => {
@@ -415,11 +495,19 @@ function renderResume(doc, resume, theme, page, fs, adv, gap) {
       y = sectionHeading(ctx, "Projects", y, { first: renderedSections === 0 });
       resume.projects.forEach((project) => {
         y = addPageIfNeeded(ctx, y, 24 * adv);
-        doc.setFont(theme.font, "bold");
-        doc.setFontSize(10.2 * fs);
-        doc.text(joinPresent([project.name, project.role], ", "), page.marginX, y);
-        rightText(ctx, dateRange(project.start_date, project.end_date), y);
-        y += 11 * adv;
+        if (theme.entryStyle === "stacked") {
+          y = stackedEntry(
+            ctx,
+            { title: project.name, subtitle: project.role, date: dateRange(project.start_date, project.end_date) },
+            y,
+          );
+        } else {
+          doc.setFont(theme.font, "bold");
+          doc.setFontSize(10.2 * fs);
+          doc.text(joinPresent([project.name, project.role], ", "), page.marginX, y);
+          rightText(ctx, dateRange(project.start_date, project.end_date), y);
+          y += 11 * adv;
+        }
 
         if (project.technologies?.length) {
           y = writeWrapped(ctx, project.technologies.map(safeText).filter(Boolean).join(", "), page.marginX, y, maxWidth, {
@@ -444,16 +532,38 @@ function renderResume(doc, resume, theme, page, fs, adv, gap) {
       y = sectionHeading(ctx, "Education", y, { first: renderedSections === 0 });
       resume.education.forEach((education) => {
         y = addPageIfNeeded(ctx, y, 24 * adv);
-        doc.setFont(theme.font, "bold");
-        doc.setFontSize(10.2 * fs);
-        doc.text(safeText(education.institution), page.marginX, y);
-        rightText(ctx, dateRange(education.start_date, education.end_date), y);
-        y += 11 * adv;
+        if (theme.entryStyle === "stacked") {
+          const degree = safeText(education.degree);
+          const institution = safeText(education.institution);
+          doc.setFont(theme.font, "bold");
+          doc.setFontSize(10.5 * fs);
+          doc.text(degree || institution || "", page.marginX, y);
+          y += 11.5 * adv;
 
-        doc.setFont(theme.font, "normal");
-        doc.setFontSize(9.6 * fs);
-        doc.text(joinPresent([education.degree, education.score]), page.marginX, y);
-        y += 10.8 * adv;
+          const subParts = [];
+          if (degree && institution) subParts.push(institution);
+          if (safeText(education.location)) subParts.push(safeText(education.location));
+          const range = dateRange(education.start_date, education.end_date);
+          if (range) subParts.push(range);
+          if (safeText(education.score)) subParts.push(safeText(education.score));
+          if (subParts.length) {
+            y = writeWrapped(ctx, subParts.join("  •  "), page.marginX, y, maxWidth, {
+              fontSize: 9.3,
+              lineHeight: 10.8,
+            });
+          }
+        } else {
+          doc.setFont(theme.font, "bold");
+          doc.setFontSize(10.2 * fs);
+          doc.text(safeText(education.institution), page.marginX, y);
+          rightText(ctx, dateRange(education.start_date, education.end_date), y);
+          y += 11 * adv;
+
+          doc.setFont(theme.font, "normal");
+          doc.setFontSize(9.6 * fs);
+          doc.text(joinPresent([education.degree, education.score]), page.marginX, y);
+          y += 10.8 * adv;
+        }
 
         if (education.coursework?.length) {
           y = writeWrapped(
@@ -473,6 +583,19 @@ function renderResume(doc, resume, theme, page, fs, adv, gap) {
     if (section === "certifications" && resume.certifications?.length) {
       y = sectionHeading(ctx, "Certifications", y, { first: renderedSections === 0 });
       resume.certifications.forEach((certification) => {
+        if (theme.entryStyle === "stacked") {
+          y = writeWrapped(ctx, certification.title, page.marginX, y, maxWidth, {
+            fontSize: 10,
+            lineHeight: 11.6,
+            style: "bold",
+          });
+          const sub = joinPresent([certification.issuer, certification.date, certification.link], "  •  ");
+          if (sub) {
+            y = writeWrapped(ctx, sub, page.marginX, y, maxWidth, { fontSize: 9.2, lineHeight: 10.6 });
+          }
+          y += 2 * adv;
+          return;
+        }
         const text = joinPresent(
           [
             certification.title,
