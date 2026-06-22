@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database.db import init_db
 from app.routes.resume_routes import router as resume_router
+from app.services.latex_compiler import LatexCompiler
 
 
 @asynccontextmanager
@@ -38,8 +39,9 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/api/health", tags=["health"])
-    def health_check() -> dict[str, str]:
-        return {"status": "ok"}
+    def health_check() -> dict[str, object]:
+        compiler = LatexCompiler().available_compiler()
+        return {"status": "ok", "latex": bool(compiler), "latex_compiler": compiler}
 
     app.include_router(resume_router)
     return app

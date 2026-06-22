@@ -12,6 +12,21 @@ export async function healthCheck() {
   return response.data;
 }
 
+// Probe the backend with a short timeout. Never throws — returns whether the
+// backend is reachable and whether it has a LaTeX engine available.
+export async function checkBackend() {
+  try {
+    const response = await api.get("/api/health", { timeout: 4000 });
+    return {
+      reachable: true,
+      latex: Boolean(response.data?.latex),
+      compiler: response.data?.latex_compiler || null,
+    };
+  } catch {
+    return { reachable: false, latex: false, compiler: null };
+  }
+}
+
 export async function saveResume(title, resume) {
   const response = await api.post("/api/resume/save", { title, resume });
   return response.data;

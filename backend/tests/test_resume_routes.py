@@ -36,7 +36,9 @@ def client() -> TestClient:
 def test_health_check(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert "latex" in body and isinstance(body["latex"], bool)
 
 
 def test_render_tex_returns_latex(client: TestClient) -> None:

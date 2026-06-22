@@ -34,6 +34,13 @@ class LatexCompiler:
         self.fallback = fallback
         self.timeout_seconds = timeout_seconds
 
+    def available_compiler(self) -> str | None:
+        """Return the name of an installed LaTeX compiler, or None if absent."""
+        try:
+            return self._resolve_compiler().name
+        except LaTeXCompilerNotFound:
+            return None
+
     def compile(self, tex_source: str) -> bytes:
         compiler = self._resolve_compiler()
 

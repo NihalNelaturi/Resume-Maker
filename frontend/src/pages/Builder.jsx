@@ -23,6 +23,7 @@ import {
   validateCommandCenterBackup,
 } from "../services/profileStorage.js";
 import { downloadTextFile, removeEmptyOptionalFields, resumeFromProfile } from "../services/resumeTransforms.js";
+import { checkBackend, generateResumePdf, getApiErrorMessage } from "../services/api.js";
 
 const TABS = [
   { id: "contact", label: "Contact" },
@@ -96,6 +97,18 @@ export default function Builder() {
       return defaults;
     }
   });
+  // Backend capability (for the optional LaTeX engine via Docker) and the
+  // selected PDF engine. LaTeX is only usable when the backend with a LaTeX
+  // compiler is reachable.
+  const [backend, setBackend] = useState({ reachable: false, latex: false, compiler: null, checked: false });
+  const [pdfMode, setPdfMode] = useState(() => {
+    try {
+      return localStorage.getItem("resmake-pdf-mode") === "latex" ? "latex" : "browser";
+    } catch {
+      return "browser";
+    }
+  });
+  const latexMode = pdfMode === "latex" && backend.latex;
 
   const cleanedResume = useMemo(() => removeEmptyOptionalFields(resumeFromProfile(profile)), [profile]);
   const isBusy = isGenerating || isImporting;
@@ -106,6 +119,20 @@ export default function Builder() {
   useEffect(() => {
     saveCommandCenterState({ profile, versions, activeVersionId });
   }, [profile, versions, activeVersionId]);
+
+  // Probe the backend once on load to see whether the LaTeX engine is available.
+  useEffect(() => {
+    let active = true;
+    checkBackend().then((result) => {
+      if (!active) return;
+      setBackend({ ...result, checked: true });
+      if (!result.latex && pdfMode === "latex") setPdfMode("browser");
+    });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-generate the preview when the Finish tab opens.
   useEffect(() => {
@@ -134,12 +161,38 @@ export default function Builder() {
     };
   }
 
-  async function renderPdfWithTemplate(templateId, optionsOverride) {
-    const { blob, filename } = await generateClientResumePdf(cleanedResume, buildPdfRenderOptions(templateId, optionsOverride));
+  function showPdfBlob(blob, filename) {
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     setPdfUrl(URL.createObjectURL(blob));
     setPdfFilename(filename);
+  }
+
+  async function renderPdfWithTemplate(templateId, optionsOverride) {
+    const { blob, filename } = await generateClientResumePdf(cleanedResume, buildPdfRenderOptions(templateId, optionsOverride));
+    showPdfBlob(blob, filename);
     return filename;
+  }
+
+  async function renderLatexPdf() {
+    const { blob, filename } = await generateResumePdf(cleanedResume);
+    showPdfBlob(blob, filename);
+    return filename;
+  }
+
+  function setPdfEngine(mode) {
+    setPdfMode(mode);
+    try {
+      localStorage.setItem("resmake-pdf-mode", mode);
+    } catch {
+      // ignore storage failures
+    }
+    if (!missingRequiredHeader) {
+      setIsGenerating(true);
+      const render = mode === "latex" && backend.latex ? renderLatexPdf() : renderPdfWithTemplate(pdfTemplateId);
+      render
+        .catch((error) => setMessage(mode === "latex" ? getApiErrorMessage(error) : "Could not render the preview."))
+        .finally(() => setIsGenerating(false));
+    }
   }
 
   async function handleGenerate() {
@@ -150,9 +203,17 @@ export default function Builder() {
     setIsGenerating(true);
     setMessage("");
     try {
-      await renderPdfWithTemplate(pdfTemplateId);
-    } catch {
-      setMessage("Could not generate the PDF. Check your resume content and try again.");
+      if (latexMode) {
+        await renderLatexPdf();
+      } else {
+        await renderPdfWithTemplate(pdfTemplateId);
+      }
+    } catch (error) {
+      setMessage(
+        latexMode
+          ? `LaTeX export failed: ${getApiErrorMessage(error)}`
+          : "Could not generate the PDF. Check your resume content and try again.",
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -473,15 +534,29 @@ export default function Builder() {
 
         <div className="space-y-4">
           <section className="section-panel">
+            <h2 className="text-base font-bold text-slate-950">PDF Engine</h2>
+            <EngineToggle mode={latexMode ? "latex" : "browser"} latexAvailable={backend.latex} disabled={isBusy} onChange={setPdfEngine} />
+            <BackendStatus backend={backend} />
+            <button
+              type="button"
+              className="btn-primary mt-4 w-full"
+              onClick={handleGenerate}
+              disabled={isBusy || missingRequiredHeader}
+            >
+              <FileDown size={16} />
+              {isGenerating ? "Generating" : latexMode ? "Export PDF (LaTeX)" : "Export PDF"}
+            </button>
+          </section>
+
+          <section className={`section-panel ${latexMode ? "opacity-60" : ""}`}>
             <h2 className="text-base font-bold text-slate-950">Template & Layout</h2>
-            <TemplatePicker templateId={pdfTemplateId} disabled={isBusy} onSelect={handleSelectTemplate} />
-            <PdfOptionsControls options={pdfOptions} disabled={isBusy} onChange={handleUpdatePdfOptions} />
-            <div className="mt-4">
-              <button type="button" className="btn-primary w-full" onClick={handleGenerate} disabled={isBusy || missingRequiredHeader}>
-                <FileDown size={16} />
-                {isGenerating ? "Generating" : "Export PDF"}
-              </button>
-            </div>
+            {latexMode ? (
+              <p className="mt-1 text-sm text-slate-500">
+                These apply to the Browser engine. LaTeX uses its own typeset layout.
+              </p>
+            ) : null}
+            <TemplatePicker templateId={pdfTemplateId} disabled={isBusy || latexMode} onSelect={handleSelectTemplate} />
+            <PdfOptionsControls options={pdfOptions} disabled={isBusy || latexMode} onChange={handleUpdatePdfOptions} />
           </section>
 
           <BackupControls
@@ -636,6 +711,53 @@ function PdfOptionsControls({ options, disabled, onChange }) {
       </div>
     </div>
   );
+}
+
+function EngineToggle({ mode, latexAvailable, disabled, onChange }) {
+  const options = [
+    { value: "browser", label: "Browser", hint: "Instant, in your browser", enabled: true },
+    { value: "latex", label: "LaTeX", hint: "Requires Docker backend", enabled: latexAvailable },
+  ];
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      {options.map((option) => {
+        const active = option.value === mode;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            disabled={disabled || !option.enabled}
+            onClick={() => onChange(option.value)}
+            className={`rounded-md border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              active ? "border-sky-300 bg-sky-50" : "border-slate-200 bg-white hover:bg-slate-50"
+            }`}
+          >
+            <span className="block text-sm font-semibold text-slate-900">{option.label}</span>
+            <span className="mt-0.5 block text-xs text-slate-500">{option.hint}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function BackendStatus({ backend }) {
+  let text;
+  let tone;
+  if (!backend.checked) {
+    text = "Checking backend…";
+    tone = "text-slate-500";
+  } else if (backend.latex) {
+    text = `Backend connected — LaTeX ready (${backend.compiler}).`;
+    tone = "text-emerald-700";
+  } else if (backend.reachable) {
+    text = "Backend connected, but no LaTeX engine is installed.";
+    tone = "text-amber-700";
+  } else {
+    text = "Backend offline — run the Docker stack (docker compose up) to enable LaTeX.";
+    tone = "text-slate-500";
+  }
+  return <p className={`mt-2 text-xs ${tone}`}>{text}</p>;
 }
 
 function TemplatePicker({ templateId, disabled, onSelect }) {

@@ -147,16 +147,34 @@ $env:VITE_API_BASE_URL="http://127.0.0.1:8000"
 npm run dev
 ```
 
-## PDF Generation
+## PDF Generation — two engines
 
-The frontend generates PDFs **in the browser** by default (jsPDF), so PDF export
-works instantly everywhere, including the Vercel deployment, with no LaTeX
-dependency. Pick a template in the Export step; the choice is remembered locally.
+The **Finish & Preview** step has a **PDF Engine** toggle:
 
-The FastAPI backend also exposes a LaTeX-based generator (`/api/resume/generate`)
-that produces a more typographically refined PDF, but it requires `tectonic` or
-`pdflatex` and therefore only runs locally or in Docker — not on Vercel
-serverless.
+- **Browser** (default): generated in your browser with jsPDF. Instant, works
+  everywhere (including the Vercel deployment), and supports the template and
+  layout controls (template, paper size, auto-fit, font size, accent color).
+- **LaTeX**: rendered by the FastAPI backend with `tectonic`/`pdflatex` for a
+  more refined typeset PDF. It uses its own built-in `.tex` layout (the template
+  controls do not apply).
+
+The app probes the backend's `/api/health` on load; when the backend is
+reachable **and** a LaTeX compiler is installed, `health` returns
+`{"latex": true, ...}` and the **LaTeX** option is enabled. Otherwise it stays
+disabled and the status line explains why.
+
+### Enabling LaTeX with Docker
+
+The backend image already installs a TeX Live (`pdflatex`) toolchain, so:
+
+```bash
+docker compose up --build
+# frontend: http://localhost:3000   backend: http://localhost:8000
+```
+
+Open `http://localhost:3000`, go to **Finish & Preview**, and switch the engine
+to **LaTeX**. On the public Vercel deployment LaTeX stays disabled (serverless
+has no TeX toolchain).
 
 ## Development
 
