@@ -342,6 +342,54 @@ export function summarizeImport(profile) {
 
 // --- File text extraction (lazy-loads heavy parsers only when needed) --------
 
+// Reconstruct readable lines from pdf.js text items using their positions.
+// Relying on item.hasEOL alone is unreliable (often false for every item,
+// which collapses the whole page into one line), so we group items by their
+// baseline y, order each line left-to-right, and insert spaces at real gaps.
+export function reconstructPageText(items) {
+  const lines = [];
+
+  for (const item of items) {
+    const str = item.str || "";
+    if (!str.trim()) continue;
+    const transform = item.transform || [1, 0, 0, 1, 0, 0];
+    const x = transform[4];
+    const y = transform[5];
+    const height = item.height || Math.abs(transform[3]) || 8;
+    const width = item.width || str.length * height * 0.5;
+
+    let line = lines.find((candidate) => Math.abs(candidate.y - y) <= Math.max(2, height * 0.4));
+    if (!line) {
+      line = { y, height, parts: [] };
+      lines.push(line);
+    }
+    line.parts.push({ x, width, str });
+  }
+
+  // PDF y grows upward, so larger y is higher on the page.
+  lines.sort((a, b) => b.y - a.y);
+
+  return lines
+    .map((line) => {
+      line.parts.sort((a, b) => a.x - b.x);
+      let text = "";
+      let prevEnd = null;
+      for (const part of line.parts) {
+        if (prevEnd !== null) {
+          const gap = part.x - prevEnd;
+          if (gap > Math.max(1, line.height * 0.25) && !text.endsWith(" ") && !part.str.startsWith(" ")) {
+            text += " ";
+          }
+        }
+        text += part.str;
+        prevEnd = part.x + part.width;
+      }
+      return text.replace(/[ \t]+/g, " ").trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
 async function extractPdfText(file) {
   const pdfjs = await import("pdfjs-dist");
   const workerUrl = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
@@ -353,16 +401,7 @@ async function extractPdfText(file) {
   for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
     const page = await doc.getPage(pageNumber);
     const content = await page.getTextContent();
-    let line = "";
-    for (const item of content.items) {
-      line += item.str;
-      if (item.hasEOL) {
-        text += `${line}\n`;
-        line = "";
-      }
-    }
-    if (line) text += `${line}\n`;
-    text += "\n";
+    text += `${reconstructPageText(content.items)}\n\n`;
   }
   return text;
 }

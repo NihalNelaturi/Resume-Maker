@@ -44,6 +44,7 @@ import {
 } from "../services/resumeTransforms.js";
 import ImportResumePanel from "../components/ImportResumePanel.jsx";
 import { extractTextFromFile, parseResumeText, summarizeImport } from "../services/resumeImport.js";
+import { defaultProfile } from "../data/defaultProfile.js";
 
 function toggleValue(list, value) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -694,14 +695,24 @@ export default function Builder() {
   function resetLocalData() {
     if (isBusy) return;
     const confirmed = window.confirm(
-      "Reset local command-center data? This removes the saved profile, versions, active version, and backup state from this browser.",
+      "Clear all data and start fresh? This erases your profile and every resume version stored in this browser.",
     );
     if (!confirmed) return;
 
+    // Build an explicitly clean slate: an empty profile with a single blank
+    // version. (Reloading from storage would restore the bundled sample
+    // versions, which is the surprising "everything came back" behavior.)
     resetCommandCenterStorage();
-    const nextState = loadCommandCenterState();
+    const blankVersion = makeBlankVersion([]);
+    const nextState = normalizeCommandCenterState({
+      profile: defaultProfile,
+      versions: [blankVersion],
+      activeVersionId: blankVersion.id,
+    });
+    saveCommandCenterState(nextState);
     applyCommandCenterState(nextState);
-    setMessage("Local command-center data reset.");
+    setActiveStep("profile");
+    setMessage("Cleared everything. Upload a resume or fill in your profile to start fresh.");
   }
 
   function renderActiveStep() {
