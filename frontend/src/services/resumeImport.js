@@ -693,7 +693,10 @@ function linesFromItems(items) {
       for (const part of line.parts) {
         if (prevEnd !== null) {
           const gap = part.x - prevEnd;
-          if (gap > Math.max(1, line.height * 0.25) && !text.endsWith(" ") && !part.str.startsWith(" ")) {
+          // A normal word space is ~0.25em and pdf.js positions adjacent words
+          // exactly that far apart, so the threshold must be below 0.25em to
+          // insert it — while staying above near-zero intra-word kerning.
+          if (gap > Math.max(0.6, line.height * 0.16) && !text.endsWith(" ") && !part.str.startsWith(" ")) {
             text += " ";
           }
         }

@@ -277,19 +277,23 @@ const SEPARATOR_COLOR = [214, 219, 226];
 
 function sectionHeading(ctx, title, y, { first = false } = {}) {
   const { doc, theme, page, fs, spacing } = ctx;
-  const topGap = first ? 0 : spacing.sectionTopGap;
+  const underline = theme.headingStyle === "underline";
+  // The underline style needs extra space above the heading so its faint
+  // section separator sits cleanly in the gap (not across the heading text).
+  let topGap = first ? 0 : spacing.sectionTopGap;
+  if (underline && !first) topGap = Math.max(topGap, 15 * ctx.adv);
   y = addPageIfNeeded(ctx, y + topGap, 22 * ctx.adv);
 
   const accent = theme.accent;
   const headingColor = theme.headingStyle === "rule" ? TEXT_COLOR : accent;
 
-  // Bold uppercase heading with a thick accent underline, and a faint separator
-  // between sections (the previous section's visual bottom rule).
-  if (theme.headingStyle === "underline") {
+  // Bold uppercase heading with a thick accent underline directly beneath it,
+  // plus a faint separator well above the heading (between sections).
+  if (underline) {
     if (!first) {
       doc.setDrawColor(...SEPARATOR_COLOR);
       doc.setLineWidth(0.6);
-      const sepY = y - spacing.sectionTopGap * 0.5;
+      const sepY = y - 11 * fs; // above the heading's cap height
       doc.line(page.marginX, sepY, page.width - page.marginX, sepY);
     }
     doc.setTextColor(...accent);
