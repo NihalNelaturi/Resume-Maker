@@ -185,7 +185,7 @@ export default function MasterProfileEditor({ profile, onChange }) {
   );
 }
 
-function SimpleListEditor({ title, items, emptyItem, prefix, fields, onChange }) {
+export function SimpleListEditor({ title, items, emptyItem, prefix, fields, onChange }) {
   function updateItem(index, patch) {
     onChange(items.map((item, currentIndex) => (currentIndex === index ? { ...item, ...patch } : item)));
   }

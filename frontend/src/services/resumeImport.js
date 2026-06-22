@@ -9,16 +9,16 @@ const DATE_RANGE_RE =
   /((?:19|20)\d{2}|present|current|now|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*)[\s\S]*?$/i;
 
 const SECTIONS = [
-  { key: "professional_summary", patterns: ["professional summary", "summary", "profile", "objective", "about me", "about"] },
-  { key: "skills", patterns: ["technical skills", "core skills", "skills", "core competencies", "technologies", "tech stack"] },
+  { key: "professional_summary", patterns: ["professional summary", "summary", "profile", "objective", "about me", "about", "career objective", "personal profile", "executive summary"] },
+  { key: "skills", patterns: ["technical skills", "core skills", "skills", "core competencies", "technologies", "tech stack", "expertise", "skills & expertise", "it skills"] },
   {
     key: "experience",
-    patterns: ["work experience", "professional experience", "employment history", "experience", "employment", "work history"],
+    patterns: ["work experience", "professional experience", "employment history", "experience", "employment", "work history", "relevant experience", "career history", "industry experience"],
   },
-  { key: "projects", patterns: ["personal projects", "academic projects", "projects", "selected projects"] },
-  { key: "education", patterns: ["education", "academic background", "academic qualifications"] },
-  { key: "certifications", patterns: ["certifications", "certificates", "licenses", "courses"] },
-  { key: "achievements", patterns: ["achievements", "awards", "honors", "accomplishments", "activities"] },
+  { key: "projects", patterns: ["personal projects", "academic projects", "projects", "selected projects", "key projects", "technical projects", "software projects"] },
+  { key: "education", patterns: ["education", "academic background", "academic qualifications", "education & certifications", "education & training", "education and training"] },
+  { key: "certifications", patterns: ["certifications", "certificates", "licenses", "courses", "certifications & training"] },
+  { key: "achievements", patterns: ["achievements", "awards", "honors", "accomplishments", "activities", "extracurriculars"] },
 ];
 
 function cleanLine(line) {
@@ -39,10 +39,18 @@ function matchSectionHeading(line) {
     .replace(/^[#*_\s]+/g, "")
     .toLowerCase()
     .trim();
-  if (!normalized || normalized.length > 40 || normalized.split(" ").length > 4) return null;
+  if (!normalized || normalized.length > 60 || normalized.split(" ").length > 8) return null;
+
+  const noSpaces = normalized.replace(/\s+/g, "");
 
   for (const section of SECTIONS) {
-    if (section.patterns.some((pattern) => normalized === pattern || normalized === `${pattern}:`)) {
+    if (section.patterns.some((pattern) => {
+      if (normalized === pattern || normalized === `${pattern}:`) return true;
+      if (noSpaces === pattern.replace(/\s+/g, "")) return true;
+      if (normalized.startsWith(`${pattern} `)) return true;
+      if (normalized.endsWith(` ${pattern}`)) return true;
+      return false;
+    })) {
       return section.key;
     }
   }
@@ -97,17 +105,24 @@ function extractContact(text) {
 }
 
 function guessName(lines, personal) {
-  for (const raw of lines.slice(0, 6)) {
-    const line = cleanLine(raw);
-    if (!line || line.length > 60) continue;
-    if (/@|https?:|www\.|linkedin|github/i.test(line)) continue;
-    if ((line.match(/\d/g) || []).length > 2) continue;
-    if (matchSectionHeading(line)) continue;
-    // A name is usually 1-5 words, mostly letters.
-    const words = line.split(" ");
-    if (words.length >= 1 && words.length <= 5 && /[a-z]/i.test(line)) {
-      return line;
-    }
+  const candidates = lines.slice(0, 15).map(cleanLine).filter(Boolean);
+
+  const isPlausible = (line, requireMultiWord) => {
+    if (line.length > 45) return false;
+    if (/@|https?:|www\.|linkedin|github|\d/i.test(line)) return false;
+    if (matchSectionHeading(line)) return false;
+    const words = line.split(" ").filter(Boolean);
+    if (words.length < (requireMultiWord ? 2 : 1) || words.length > 4) return false;
+    // Each word should start with a capital letter (Latin or Greek).
+    return words.every((word) => /^[\p{Lu}]/u.test(word)) && /\p{L}/u.test(line);
+  };
+
+  // Prefer a 2-4 word capitalized name; fall back to a single capitalized word.
+  for (const line of candidates) {
+    if (isPlausible(line, true)) return line;
+  }
+  for (const line of candidates) {
+    if (isPlausible(line, false)) return line;
   }
   return personal.email ? personal.email.split("@")[0] : "";
 }
@@ -342,33 +357,32 @@ export function summarizeImport(profile) {
 
 // --- File text extraction (lazy-loads heavy parsers only when needed) --------
 
-// Reconstruct readable lines from pdf.js text items using their positions.
-// Relying on item.hasEOL alone is unreliable (often false for every item,
-// which collapses the whole page into one line), so we group items by their
+function normalizeItem(item) {
+  const transform = item.transform || [1, 0, 0, 1, 0, 0];
+  const height = item.height || Math.abs(transform[3]) || 8;
+  return {
+    str: item.str || "",
+    x: transform[4],
+    y: transform[5],
+    height,
+    width: item.width || (item.str || "").length * height * 0.5,
+  };
+}
+
+// Convert positioned items (a single column) into ordered text lines: group by
 // baseline y, order each line left-to-right, and insert spaces at real gaps.
-export function reconstructPageText(items) {
+function linesFromItems(items) {
   const lines = [];
-
   for (const item of items) {
-    const str = item.str || "";
-    if (!str.trim()) continue;
-    const transform = item.transform || [1, 0, 0, 1, 0, 0];
-    const x = transform[4];
-    const y = transform[5];
-    const height = item.height || Math.abs(transform[3]) || 8;
-    const width = item.width || str.length * height * 0.5;
-
-    let line = lines.find((candidate) => Math.abs(candidate.y - y) <= Math.max(2, height * 0.4));
+    if (!item.str.trim()) continue;
+    let line = lines.find((candidate) => Math.abs(candidate.y - item.y) <= Math.max(2, item.height * 0.4));
     if (!line) {
-      line = { y, height, parts: [] };
+      line = { y: item.y, height: item.height, parts: [] };
       lines.push(line);
     }
-    line.parts.push({ x, width, str });
+    line.parts.push(item);
   }
-
-  // PDF y grows upward, so larger y is higher on the page.
-  lines.sort((a, b) => b.y - a.y);
-
+  lines.sort((a, b) => b.y - a.y); // PDF y grows upward
   return lines
     .map((line) => {
       line.parts.sort((a, b) => a.x - b.x);
@@ -386,8 +400,56 @@ export function reconstructPageText(items) {
       }
       return text.replace(/[ \t]+/g, " ").trim();
     })
-    .filter(Boolean)
-    .join("\n");
+    .filter(Boolean);
+}
+
+// Detect a two-column layout by finding a vertical band (in the middle of the
+// page) that no text crosses, with substantial content on both sides. Returns
+// [leftItems, rightItems] or null for single-column pages.
+function detectColumns(items) {
+  if (items.length < 16) return null;
+  const pageLeft = Math.min(...items.map((i) => i.x));
+  const pageRight = Math.max(...items.map((i) => i.x + i.width));
+  const width = pageRight - pageLeft;
+  if (width <= 0) return null;
+
+  let best = null;
+  for (let frac = 0.3; frac <= 0.7; frac += 0.02) {
+    const split = pageLeft + width * frac;
+    let straddle = 0;
+    let left = 0;
+    let right = 0;
+    for (const item of items) {
+      const itemRight = item.x + item.width;
+      if (item.x < split && itemRight > split) straddle += 1;
+      else if (itemRight <= split) left += 1;
+      else right += 1;
+    }
+    // Allow a few straddling items (a full-width header above the columns).
+    if (straddle <= 4 && left >= 6 && right >= 6) {
+      const score = Math.min(left, right) - straddle;
+      if (!best || score > best.score) best = { split, score };
+    }
+  }
+  if (!best) return null;
+
+  // Header lines that span both columns are rendered first, then each column.
+  const straddleItems = items.filter((i) => i.x < best.split && i.x + i.width > best.split);
+  const leftItems = items.filter((i) => i.x + i.width <= best.split);
+  const rightItems = items.filter((i) => i.x >= best.split);
+  return [straddleItems, leftItems, rightItems].filter((group) => group.length);
+}
+
+// Reconstruct readable text from pdf.js text items. Handles single- and
+// two-column layouts (so a skills sidebar doesn't get interleaved into the
+// experience lines and break section detection).
+export function reconstructPageText(items) {
+  const normalized = items.map(normalizeItem).filter((item) => item.str.trim());
+  if (!normalized.length) return "";
+
+  const columns = detectColumns(normalized);
+  const groups = columns || [normalized];
+  return groups.map((group) => linesFromItems(group).join("\n")).filter(Boolean).join("\n");
 }
 
 async function extractPdfText(file) {

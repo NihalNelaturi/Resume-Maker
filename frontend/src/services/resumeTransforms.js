@@ -62,6 +62,34 @@ export function resumeFromProfileVersion(profile, version) {
   };
 }
 
+// Build a resume from the entire profile (every item included). Used by the
+// single-resume tabbed editor, which has no per-version item selection.
+export function resumeFromProfile(profile) {
+  const skills = Object.entries(profile.skills || {})
+    .map(([category, items]) => ({ category, items: normalizeList(items) }))
+    .filter((skill) => skill.items.length);
+
+  return {
+    header: {
+      full_name: profile.personal?.full_name || "",
+      email: profile.personal?.email || "",
+      phone: profile.personal?.phone || "",
+      location: profile.personal?.location || "",
+      linkedin: profile.personal?.linkedin || "",
+      github: profile.personal?.github || "",
+      portfolio: profile.personal?.portfolio || "",
+    },
+    professional_summary: profile.personal?.professional_summary || "",
+    skills,
+    experience: (profile.experience || []).map(stripId),
+    projects: (profile.projects || []).map(stripId),
+    education: (profile.education || []).map(stripId),
+    certifications: (profile.certifications || []).map(stripId),
+    achievements: (profile.achievements || []).map(stripId),
+    section_order: DEFAULT_SECTION_ORDER,
+  };
+}
+
 export function removeEmptyOptionalFields(value) {
   if (Array.isArray(value)) {
     return value
