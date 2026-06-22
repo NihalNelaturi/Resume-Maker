@@ -5,8 +5,11 @@
 
 const BULLET_RE = /^\s*[•▪◦‣·*‐-–—]\s+/;
 const YEAR_RE = /\b(?:19|20)\d{2}\b/;
+// Matches a trailing date (an optional month name followed by a 4-digit year)
+// through end of string. Anchored on a real year so it never eats ordinary
+// words that merely start with a month abbreviation (e.g. "Decision", "Junior").
 const DATE_RANGE_RE =
-  /((?:19|20)\d{2}|present|current|now|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*)[\s\S]*?$/i;
+  /\s*(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2}\b[\s\S]*$/i;
 
 const SECTIONS = [
   { key: "professional_summary", patterns: ["professional summary", "summary", "profile", "objective", "about me", "about", "career objective", "personal profile", "executive summary"] },
@@ -179,6 +182,15 @@ function splitSections(lines) {
   for (const raw of lines) {
     const heading = detectHeading(raw);
     if (heading) {
+      if (
+        heading.key === "skills" &&
+        ["projects", "experience"].includes(current) &&
+        /^\s*(technologies|tech|tools|tech stack|stack)\s*[:|]/i.test(cleanLine(raw))
+      ) {
+        if (!buckets[current]) buckets[current] = [];
+        buckets[current].push(raw);
+        continue;
+      }
       current = heading.key;
       if (!buckets[current]) buckets[current] = [];
       // Keep any content that shared the heading's line (e.g. "Skills: Python, SQL").
@@ -238,6 +250,28 @@ function joinWrapped(previous, addition) {
   return `${previous} ${addition}`;
 }
 
+// Merge lines that are wrapped continuations of the previous line. A line is a
+// continuation when the previous line ended mid-list/mid-word (trailing comma,
+// "&", "/", "-") or this line starts lowercase or with "(". Used for sections
+// where one logical item spans several visual lines (skills, certifications,
+// achievements).
+function joinWrappedLines(lines) {
+  const out = [];
+  for (const raw of lines) {
+    const line = cleanLine(raw);
+    if (!line) continue;
+    if (out.length) {
+      const prev = out[out.length - 1];
+      if (/[,&/-]$/.test(prev) || /^[a-z(]/.test(line)) {
+        out[out.length - 1] = joinWrapped(prev, line);
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 function parseEntries(sectionLines) {
   // Group lines into entries. The first line (and any later line that looks like
   // a header) starts a new entry; every other line is content. Content captures
@@ -255,6 +289,11 @@ function parseEntries(sectionLines) {
 
     if (!current) {
       current = { header: line, bullets: [] };
+      continue;
+    }
+
+    if (/^(technologies|tech|tools|tech stack|stack)\b\s*[:|-]/i.test(line)) {
+      current.bullets.push(text);
       continue;
     }
 
@@ -282,21 +321,86 @@ function parseEntries(sectionLines) {
 
 const ORG_KEYWORD_RE = /\b(inc|llc|ltd|corp|co|company|technolog|institute|university|college|labs?|systems?|solutions?|pvt|gmbh|studios?|agency|foundation|bank)\b/i;
 const EDU_KEYWORD_RE = /\b(university|college|school|institute|academy|polytechnic|vidyalaya|gurukul)\b/i;
+// Strong degree/qualification signals only — avoids matching generic project
+// words like "engineering" or "communication".
+// Strong qualification signals only. Note: "school"/"high school" is left out
+// because it also appears in institution names (e.g. "St. Ann's High School"),
+// which would split one education entry into two. Such lines are still detected
+// as new entries via their year.
+const DEGREE_KEYWORD_RE = /\b(b\.?\s?tech|b\.?\s?e\.?|b\.?\s?sc|bachelor|m\.?\s?tech|m\.?\s?sc|master|mba|ph\.?d|intermediate|m\.?\s?p\.?\s?c\.?|diploma)\b/i;
+const SCORE_RE = /\b(?:cgpa|gpa|percentage|score)\s*[:.-]?\s*[\d.]+(?:\s*\/\s*\d+)?\b/i;
+const SKILL_VOCABULARY = [
+  "Python",
+  "Java",
+  "C++",
+  "C",
+  "JavaScript",
+  "TypeScript",
+  "React",
+  "Node.js",
+  "HTML",
+  "CSS",
+  "Tailwind CSS",
+  "SQL",
+  "MySQL",
+  "PostgreSQL",
+  "MongoDB",
+  "FastAPI",
+  "Flask",
+  "Django",
+  "REST API",
+  "Git",
+  "GitHub",
+  "Docker",
+  "Kubernetes",
+  "AWS",
+  "Azure",
+  "GCP",
+  "Linux",
+  "TensorFlow",
+  "PyTorch",
+  "scikit-learn",
+  "Pandas",
+  "NumPy",
+  "Machine Learning",
+  "Deep Learning",
+  "NLP",
+  "Data Analysis",
+  "Data Visualization",
+  "Power BI",
+  "Tableau",
+  "Excel",
+  "Vercel",
+  "Firebase",
+];
 
 function parseSkills(sectionLines) {
   const skills = {};
-  for (const raw of sectionLines) {
+  // Merge wrapped continuation lines first ("..., PyTorch," + "XGBoost, ...").
+  for (const raw of joinWrappedLines(sectionLines)) {
     const line = stripBullet(cleanLine(raw));
     if (!line) continue;
-    const colon = line.indexOf(":");
     let category = "Skills";
     let itemsText = line;
+
+    const colon = line.indexOf(":");
     if (colon > 0 && colon < 40) {
       category = cleanLine(line.slice(0, colon)) || "Skills";
       itemsText = line.slice(colon + 1);
+    } else {
+      // No colon: many resumes use a category label followed by the list, e.g.
+      // "Languages Python, C, C++" or "ML / Data scikit-learn, TensorFlow".
+      // Treat a short leading label (optionally "A / B") as the category when a
+      // comma-separated list follows.
+      const labelMatch = line.match(/^([A-Z][A-Za-z]+(?:\s*\/\s*[A-Za-z]+)*)\s+(.+)$/);
+      if (labelMatch && labelMatch[1].length <= 18 && labelMatch[2].includes(",")) {
+        category = labelMatch[1];
+        itemsText = labelMatch[2];
+      }
     }
+
     const items = itemsText
-      .split(/[,•|·;/]+/)
+      .split(/[,•|·;]+/)
       .map(cleanLine)
       .filter((item) => item && item.length <= 40);
     if (!items.length) continue;
@@ -307,6 +411,130 @@ function parseSkills(sectionLines) {
     skills[category] = [...new Set(skills[category])];
   });
   return skills;
+}
+
+function textContainsSkill(text, skill) {
+  const normalized = String(text || "").toLowerCase();
+  const escaped = escapeRegExp(skill.toLowerCase()).replace(/\\\s+/g, "\\s+");
+  if (/[+#.]/.test(skill)) return normalized.includes(skill.toLowerCase());
+  return new RegExp(`(?<![a-z0-9+#.])${escaped}(?![a-z0-9+#.])`, "i").test(normalized);
+}
+
+function recoverSkillsFromText(text) {
+  const found = SKILL_VOCABULARY.filter((skill) => textContainsSkill(text, skill));
+  return found.length ? { Skills: [...new Set(found)] } : {};
+}
+
+function looksLikeEducationEntry(entry) {
+  const combined = [entry.header, ...(entry.bullets || [])].join(" ");
+  return DEGREE_KEYWORD_RE.test(combined) || EDU_KEYWORD_RE.test(combined);
+}
+
+function looksLikeEducationLine(line) {
+  return DEGREE_KEYWORD_RE.test(line) || EDU_KEYWORD_RE.test(line) || SCORE_RE.test(line);
+}
+
+function splitMisplacedEducationLines(sectionLines) {
+  const resumeLines = [];
+  const educationLines = [];
+  let inEducationTail = false;
+
+  for (const raw of sectionLines || []) {
+    const line = cleanLine(raw);
+    if (!line) continue;
+    if (!inEducationTail && looksLikeEducationLine(line)) {
+      inEducationTail = true;
+    }
+    if (inEducationTail) {
+      educationLines.push(raw);
+    } else {
+      resumeLines.push(raw);
+    }
+  }
+
+  return { resumeLines, educationLines };
+}
+
+function extractScore(text) {
+  const match = String(text || "").match(SCORE_RE);
+  return match ? cleanLine(match[0]) : "";
+}
+
+function parseEducationEntry(entry) {
+  const combinedLines = [entry.header, ...(entry.bullets || [])].map(cleanLine).filter(Boolean);
+  const combined = combinedLines.join(" ");
+  const { start, end } = parseDates(combined);
+  const score = extractScore(combined);
+  const institutionLine = combinedLines.find((line) => EDU_KEYWORD_RE.test(line)) || "";
+  const degreeLine = combinedLines.find((line) => DEGREE_KEYWORD_RE.test(line)) || entry.header;
+  const institutionParts = splitHeaderParts(institutionLine);
+  const degreeParts = splitHeaderParts(degreeLine);
+  const institution =
+    institutionParts.find((part) => EDU_KEYWORD_RE.test(part)) ||
+    institutionLine.replace(SCORE_RE, "").replace(DATE_RANGE_RE, "").trim() ||
+    degreeParts.find((part) => EDU_KEYWORD_RE.test(part)) ||
+    "";
+  let degree =
+    degreeParts.find((part) => DEGREE_KEYWORD_RE.test(part) && !EDU_KEYWORD_RE.test(part)) ||
+    degreeLine.replace(SCORE_RE, "").replace(DATE_RANGE_RE, "").trim();
+
+  if (institution && degree.includes(institution)) {
+    degree = degree.replace(institution, "").replace(/^[\s,|.-]+|[\s,|.-]+$/g, "").trim();
+  }
+
+  const coursework = SKILL_VOCABULARY.filter((skill) => textContainsSkill(combined, skill)).slice(0, 8);
+
+  return {
+    institution: institution || degree || entry.header,
+    degree: degree || entry.header,
+    location: "",
+    start_date: start,
+    end_date: end,
+    score,
+    coursework,
+  };
+}
+
+function parseEducationLines(sectionLines) {
+  const entries = [];
+  let current = null;
+
+  for (const raw of sectionLines || []) {
+    const line = stripBullet(cleanLine(raw));
+    if (!line) continue;
+    // A new education entry begins on a qualification line (a degree keyword, or
+    // a line carrying a year — the institution/score line that follows has
+    // neither). This handles the common two-line "Degree + dates / Institution
+    // + score" pattern.
+    const startsEntry = DEGREE_KEYWORD_RE.test(line) || YEAR_RE.test(line);
+
+    if (!current) {
+      current = { header: line, bullets: [] };
+      continue;
+    }
+
+    const currentIsEntryStart = DEGREE_KEYWORD_RE.test(current.header) || YEAR_RE.test(current.header);
+    if (startsEntry && (current.bullets.length > 0 || currentIsEntryStart)) {
+      entries.push(current);
+      current = { header: line, bullets: [] };
+      continue;
+    }
+
+    current.bullets.push(line);
+  }
+
+  if (current) entries.push(current);
+  return entries.map(parseEducationEntry);
+}
+
+function isLowSignalAchievement(line) {
+  const cleaned = cleanLine(line);
+  if (!cleaned) return true;
+  if (/^(impact|result|outcome|note)\s*[;:,-]/i.test(cleaned)) return true;
+  if (/^[a-z]/.test(cleaned) && !/\b(award|winner|recognition|selected|rank|hackathon|certified|honou?r)\b/i.test(cleaned)) {
+    return true;
+  }
+  return false;
 }
 
 export function parseResumeText(text) {
@@ -353,7 +581,16 @@ export function parseResumeText(text) {
     });
   });
 
-  parseEntries(buckets.projects || []).forEach((entry) => {
+  const { resumeLines: projectLines, educationLines: misplacedEducationLines } = splitMisplacedEducationLines(
+    buckets.projects || [],
+  );
+
+  parseEntries(projectLines).forEach((entry) => {
+    if (looksLikeEducationEntry(entry)) {
+      profile.education.push(parseEducationEntry(entry));
+      return;
+    }
+
     const parts = splitHeaderParts(entry.header);
     const { start, end } = parseDates(entry.header);
     // A bullet like "Technologies: X, Y" becomes the tech list; the rest stay bullets.
@@ -372,47 +609,36 @@ export function parseResumeText(text) {
     });
   });
 
-  parseEntries(buckets.education || []).forEach((entry) => {
-    const { start, end } = parseDates(entry.header);
-    const parts = splitHeaderParts(entry.header);
-    const instIndex = parts.findIndex((part) => EDU_KEYWORD_RE.test(part));
-    let institution = "";
-    let degree = "";
-    if (instIndex >= 0) {
-      institution = parts[instIndex];
-      degree = parts.filter((_, index) => index !== instIndex).join(", ") || entry.bullets[0] || "";
-    } else {
-      institution = parts[0] || entry.header;
-      degree = parts.slice(1).join(", ") || entry.bullets[0] || "";
-    }
-    profile.education.push({
-      institution,
-      degree,
-      location: "",
-      start_date: start,
-      end_date: end,
-      score: "",
-      coursework: [],
-    });
+  parseEducationLines([...(buckets.education || []), ...misplacedEducationLines]).forEach((education) => {
+    profile.education.push(education);
   });
 
-  (buckets.certifications || []).forEach((raw) => {
-    const line = stripBullet(cleanLine(raw));
-    if (!line) return;
-    const { start } = parseDates(line);
-    profile.certifications.push({
-      title: line.replace(DATE_RANGE_RE, "").replace(/[(),|–-]+\s*$/, "").trim() || line,
-      issuer: "",
-      date: start,
-      link: "",
+  // Certifications are often a single "·"-separated list wrapped across lines.
+  // Join the wrapped lines, then split each into individual certifications.
+  joinWrappedLines(buckets.certifications || [])
+    .flatMap((line) => line.split(/\s*[·•|]\s*/))
+    .map((cert) => stripBullet(cleanLine(cert)))
+    .filter(Boolean)
+    .forEach((cert) => {
+      const { start } = parseDates(cert);
+      profile.certifications.push({
+        title: cert.replace(DATE_RANGE_RE, "").replace(/[,|·–—-]+\s*$/, "").trim() || cert,
+        issuer: "",
+        date: start,
+        link: "",
+      });
     });
-  });
 
-  (buckets.achievements || []).forEach((raw) => {
-    const line = stripBullet(cleanLine(raw));
-    if (!line) return;
-    profile.achievements.push({ title: line, description: "", date: "" });
-  });
+  // Join wrapped award lines so a continuation ("...practical societal" +
+  // "impact; selected ...") stays with its achievement, then drop any orphan
+  // low-signal fragments.
+  joinWrappedLines(buckets.achievements || [])
+    .filter((line) => !isLowSignalAchievement(line))
+    .forEach((line) => profile.achievements.push({ title: line, description: "", date: "" }));
+
+  if (!Object.keys(profile.skills).length) {
+    profile.skills = recoverSkillsFromText(safe);
+  }
 
   return profile;
 }
@@ -479,41 +705,46 @@ function linesFromItems(items) {
     .filter(Boolean);
 }
 
-// Detect a two-column layout by finding a vertical band (in the middle of the
-// page) that no text crosses, with substantial content on both sides. Returns
-// [leftItems, rightItems] or null for single-column pages.
+// Detect a right-hand sidebar column. Works even when the page is full-width at
+// the top and only two-column lower down (a very common resume layout, e.g. a
+// SKILLS sidebar beside EDUCATION). The gutter only has to be clean WITHIN the
+// sidebar's own vertical band — full-width prose above it does not disqualify
+// it. Returns [leftItems, rightItems] (left = full-width top + left column,
+// read first; right = the sidebar, read after) or null for single-column pages.
 function detectColumns(items) {
-  if (items.length < 12) return null;
+  if (items.length < 14) return null;
   const pageLeft = Math.min(...items.map((i) => i.x));
   const pageRight = Math.max(...items.map((i) => i.x + i.width));
   const width = pageRight - pageLeft;
-  if (width <= 0) return null;
+  if (width < 200) return null;
 
   let best = null;
-  for (let frac = 0.3; frac <= 0.7; frac += 0.02) {
-    const split = pageLeft + width * frac;
-    let straddle = 0;
-    let left = 0;
-    let right = 0;
-    for (const item of items) {
-      const itemRight = item.x + item.width;
-      if (item.x < split && itemRight > split) straddle += 1;
-      else if (itemRight <= split) left += 1;
-      else right += 1;
-    }
-    // Allow a few straddling items (a full-width header above the columns).
-    if (straddle <= 4 && left >= 6 && right >= 6) {
-      const score = Math.min(left, right) - straddle;
-      if (!best || score > best.score) best = { split, score };
-    }
+  for (let g = pageLeft + width * 0.38; g <= pageLeft + width * 0.72; g += 5) {
+    const right = items.filter((i) => i.x >= g);
+    if (right.length < 6) continue;
+
+    const ys = right.map((i) => i.y);
+    const top = Math.max(...ys);
+    const bottom = Math.min(...ys);
+    if (top - bottom < 50) continue; // the sidebar must span a vertical range
+
+    // Within the sidebar's vertical band, the gutter must be a clean corridor:
+    // few items cross it. (A sidebar has a clear gutter; full-width prose does
+    // not, which is how this avoids splitting single-column resumes.)
+    const inBand = (i) => i.y <= top + 6 && i.y >= bottom - 6;
+    const crossing = items.filter((i) => inBand(i) && i.x < g && i.x + i.width > g);
+    if (crossing.length > 1) continue;
+    const leftInBand = items.filter((i) => inBand(i) && i.x + i.width <= g);
+    if (leftInBand.length < 3) continue; // there must be real left-column content too
+
+    const score = right.length + leftInBand.length;
+    if (!best || score > best.score) best = { g, score };
   }
   if (!best) return null;
 
-  // Header lines that span both columns are rendered first, then each column.
-  const straddleItems = items.filter((i) => i.x < best.split && i.x + i.width > best.split);
-  const leftItems = items.filter((i) => i.x + i.width <= best.split);
-  const rightItems = items.filter((i) => i.x >= best.split);
-  return [straddleItems, leftItems, rightItems].filter((group) => group.length);
+  const left = items.filter((i) => i.x < best.g);
+  const right = items.filter((i) => i.x >= best.g);
+  return [left, right];
 }
 
 // Reconstruct readable text from pdf.js text items. Handles single- and
