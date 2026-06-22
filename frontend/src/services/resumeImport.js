@@ -45,21 +45,52 @@ function escapeRegExp(value) {
 // by an explicit ":"/"|" separator. Loose prefix/suffix matching is avoided
 // because it misclassifies ordinary lines like "relevant experience" as
 // headings and drops their content.
+function despace(value) {
+  return value.replace(/\s+/g, "").toLowerCase();
+}
+
 function detectHeading(line) {
   const cleaned = cleanLine(line).replace(/^[#*_\s]+/g, "").replace(/[#*_]+$/g, "");
-  if (!cleaned || cleaned.length > 80) return null;
+  if (!cleaned || cleaned.length > 100) return null;
   const lower = cleaned.toLowerCase().replace(/:$/, "").trim();
-  const noSpaces = lower.replace(/\s+/g, "");
+  const noSpaces = despace(lower);
 
   for (const section of SECTIONS) {
     for (const pattern of section.patterns) {
-      if (lower === pattern || noSpaces === pattern.replace(/\s+/g, "")) {
+      // Whole-line heading. noSpaces also matches letter-spaced headings such
+      // as "E X P E R I E N C E".
+      if (lower === pattern || noSpaces === despace(pattern)) {
         return { key: section.key, remainder: "" };
       }
+      // Inline heading with an explicit separator: "Skills: Python, SQL".
       const inline = cleaned.match(new RegExp(`^${escapeRegExp(pattern)}\\s*[:|]\\s*(.+)$`, "i"));
       if (inline) return { key: section.key, remainder: inline[1].trim() };
     }
   }
+
+  // Letter-spaced heading possibly merged with following content, e.g.
+  // "E D U C A T I O N B.Tech ..." -> heading EDUCATION, remainder "B.Tech ...".
+  // Requires 3+ single letters separated by spaces, so normal prose never matches.
+  const spaced = cleaned.match(/^((?:[A-Za-z]\s){2,}[A-Za-z])(.*)$/);
+  if (spaced) {
+    const letters = spaced[1].replace(/\s/g, "");
+    const lettersLower = letters.toLowerCase();
+    const trailing = spaced[2] || "";
+    for (const section of SECTIONS) {
+      for (const pattern of section.patterns) {
+        const dp = despace(pattern);
+        if (lettersLower === dp) {
+          return { key: section.key, remainder: trailing.trim() };
+        }
+        // The heading abutted a following word: the extra letters past the
+        // pattern (e.g. the "B" of "B.Tech") belong to the content.
+        if (lettersLower.startsWith(dp)) {
+          return { key: section.key, remainder: `${letters.slice(dp.length)}${trailing}`.trim() };
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -122,6 +153,10 @@ function guessName(lines, personal) {
     if (line.length > 45) return false;
     if (/@|https?:|www\.|linkedin|github|\d/i.test(line)) return false;
     if (matchSectionHeading(line)) return false;
+    // Institutions/companies/degrees are not names.
+    if (EDU_KEYWORD_RE.test(line) || ORG_KEYWORD_RE.test(line) || /\b(b\.?tech|b\.?e|b\.?sc|m\.?tech|bachelor|master|diploma)\b/i.test(line)) {
+      return false;
+    }
     const words = line.split(" ").filter(Boolean);
     if (words.length < (requireMultiWord ? 2 : 1) || words.length > 4) return false;
     // Each word should start with a capital letter (Latin or Greek).
@@ -170,30 +205,44 @@ function parseDates(text) {
 
 function splitHeaderParts(line) {
   // Remove a trailing date range, then split title/company by common separators.
-  const withoutDate = line.replace(/\s*[|,–—-]?\s*((?:19|20)\d{2}[\s\S]*)$/i, "").trim() || line;
-  const parts = withoutDate
+  const MONTH = "(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\w*\\.?";
+  let withoutDate =
+    line.replace(new RegExp(`\\s*[|,·–—-]?\\s*(?:${MONTH}\\s+)?((?:19|20)\\d{2}[\\s\\S]*)$`, "i"), "").trim() || line;
+  withoutDate = withoutDate.replace(/[\s|·,–—-]+$/, "").trim(); // drop dangling separators
+  return withoutDate
     .split(/\s+(?:at|@|\||·|—|–|-|,)\s+/i)
-    .map(cleanLine)
+    .map((part) => cleanLine(part).replace(/[\s|·,–—-]+$/, "").trim())
     .filter(Boolean);
-  return parts;
 }
 
 function looksLikeHeader(line) {
-  // Distinguishes a real new entry header from a wrapped bullet continuation.
-  if (YEAR_RE.test(line)) return true;
+  // Distinguishes a real new entry header (e.g. "Software Engineer, Acme") from
+  // a description sentence (e.g. "Contributed to research, driving growth.").
+  if (YEAR_RE.test(line)) return true; // a dated line is a header
   const words = line.split(/\s+/);
-  if (words.length > 10) return false; // long prose is almost certainly a wrap
+  if (words.length > 8) return false; // long prose is a description, not a header
   if (!/^[\p{Lu}]/u.test(line)) return false; // headers start with a capital (Latin or Greek)
-  if (/[.;:]$/.test(line)) return false; // continuations usually end with punctuation
-  if (/\s[-–—|]\s|,|\bat\b|@/i.test(line)) return true; // header-style separators
-  return words.length <= 6; // a short Title-case line
+  if (/[.;:!?]$/.test(line)) return false; // a sentence end means it is a description
+  // "Title at Company" / "Title | Company" / "Title · Company" style headers.
+  if (/\s(?:at)\s|\s[|·—–]\s/i.test(line)) return true;
+  // A short, mostly Title-Case line (most words start capitalised / are numbers).
+  const capWords = words.filter((word) => /^[\p{Lu}0-9]/u.test(word)).length;
+  return words.length <= 6 && capWords >= Math.ceil(words.length * 0.6);
+}
+
+function joinWrapped(previous, addition) {
+  // Join a wrapped continuation line. A trailing hyphen is a real compound word
+  // broken across lines ("next-" + "generation" -> "next-generation"), so keep
+  // it and join without a space.
+  if (previous.endsWith("-")) return previous + addition;
+  return `${previous} ${addition}`;
 }
 
 function parseEntries(sectionLines) {
-  // Group lines into entries. A bullet line attaches to the current entry; a
-  // non-bullet line starts a new entry only if it looks like a header,
-  // otherwise it is treated as a wrapped continuation of the previous bullet
-  // (this prevents wrapped bullets from becoming spurious bold "titles").
+  // Group lines into entries. The first line (and any later line that looks like
+  // a header) starts a new entry; every other line is content. Content captures
+  // BOTH bullet points and plain description paragraphs (many resumes describe
+  // roles in prose, not bullets). Wrapped continuation lines are joined back.
   const entries = [];
   let current = null;
 
@@ -201,34 +250,38 @@ function parseEntries(sectionLines) {
     const line = cleanLine(raw);
     if (!line) continue;
 
-    if (isBullet(line)) {
-      if (!current) current = { header: "", bullets: [], extra: [] };
-      current.bullets.push(stripBullet(line));
+    const bulleted = isBullet(line);
+    const text = bulleted ? stripBullet(line) : line;
+
+    if (!current) {
+      current = { header: line, bullets: [] };
       continue;
     }
 
-    if (!current) {
-      current = { header: line, bullets: [], extra: [] };
-    } else if (current.bullets.length === 0) {
-      // Non-bullet line right under a header with no bullets yet: detail line
-      // (e.g. a degree under an institution), unless it is clearly a new header.
-      if (looksLikeHeader(line) && current.extra.length > 0) {
-        entries.push(current);
-        current = { header: line, bullets: [], extra: [] };
-      } else {
-        current.extra.push(line);
-      }
-    } else if (looksLikeHeader(line)) {
+    // A non-bulleted line that looks like a new entry header starts a new entry.
+    if (!bulleted && looksLikeHeader(line)) {
       entries.push(current);
-      current = { header: line, bullets: [], extra: [] };
-    } else {
-      // Wrapped continuation of the previous bullet.
-      current.bullets[current.bullets.length - 1] += ` ${line}`;
+      current = { header: line, bullets: [] };
+      continue;
     }
+
+    // Otherwise it is content. Join a plain wrapped continuation onto the
+    // previous content line when that line did not end a sentence.
+    if (!bulleted && current.bullets.length > 0) {
+      const prev = current.bullets[current.bullets.length - 1];
+      if (prev && !/[.;:!?)\]]$/.test(prev)) {
+        current.bullets[current.bullets.length - 1] = joinWrapped(prev, text);
+        continue;
+      }
+    }
+    current.bullets.push(text);
   }
   if (current) entries.push(current);
   return entries;
 }
+
+const ORG_KEYWORD_RE = /\b(inc|llc|ltd|corp|co|company|technolog|institute|university|college|labs?|systems?|solutions?|pvt|gmbh|studios?|agency|foundation|bank)\b/i;
+const EDU_KEYWORD_RE = /\b(university|college|school|institute|academy|polytechnic|vidyalaya|gurukul)\b/i;
 
 function parseSkills(sectionLines) {
   const skills = {};
@@ -284,10 +337,14 @@ export function parseResumeText(text) {
   }
 
   parseEntries(buckets.experience || []).forEach((entry) => {
-    const [title = "", company = ""] = splitHeaderParts(entry.header);
+    const parts = splitHeaderParts(entry.header);
     const { start, end } = parseDates(entry.header);
+    const title = parts[0] || entry.header;
+    // Company: prefer a part that names an organization; else the second part.
+    const orgPart = parts.slice(1).find((part) => ORG_KEYWORD_RE.test(part));
+    const company = orgPart || parts[1] || "";
     profile.experience.push({
-      title: title || entry.header,
+      title,
       company,
       location: "",
       start_date: start,
@@ -297,31 +354,37 @@ export function parseResumeText(text) {
   });
 
   parseEntries(buckets.projects || []).forEach((entry) => {
-    const [name = ""] = splitHeaderParts(entry.header);
+    const parts = splitHeaderParts(entry.header);
     const { start, end } = parseDates(entry.header);
-    const techLine = entry.extra.find((line) => /^(technologies|tech|tools|stack)\b/i.test(line));
-    const technologies = techLine
-      ? techLine
-          .replace(/^[^:]*:/, "")
-          .split(/[,•|·;/]+/)
-          .map(cleanLine)
-          .filter(Boolean)
+    // A bullet like "Technologies: X, Y" becomes the tech list; the rest stay bullets.
+    const techBullet = entry.bullets.find((line) => /^(technologies|tech|tools|tech stack|stack)\b\s*[:|-]/i.test(line));
+    const technologies = techBullet
+      ? techBullet.replace(/^[^:|-]*[:|-]/, "").split(/[,•|·;/]+/).map(cleanLine).filter(Boolean)
       : [];
     profile.projects.push({
-      name: name || entry.header,
+      name: parts[0] || entry.header,
       role: "",
       link: "",
       start_date: start,
       end_date: end,
       technologies,
-      bullets: entry.bullets,
+      bullets: entry.bullets.filter((line) => line !== techBullet),
     });
   });
 
   parseEntries(buckets.education || []).forEach((entry) => {
     const { start, end } = parseDates(entry.header);
-    const institution = splitHeaderParts(entry.header)[0] || entry.header;
-    const degree = entry.extra[0] || entry.bullets[0] || "";
+    const parts = splitHeaderParts(entry.header);
+    const instIndex = parts.findIndex((part) => EDU_KEYWORD_RE.test(part));
+    let institution = "";
+    let degree = "";
+    if (instIndex >= 0) {
+      institution = parts[instIndex];
+      degree = parts.filter((_, index) => index !== instIndex).join(", ") || entry.bullets[0] || "";
+    } else {
+      institution = parts[0] || entry.header;
+      degree = parts.slice(1).join(", ") || entry.bullets[0] || "";
+    }
     profile.education.push({
       institution,
       degree,
@@ -420,7 +483,7 @@ function linesFromItems(items) {
 // page) that no text crosses, with substantial content on both sides. Returns
 // [leftItems, rightItems] or null for single-column pages.
 function detectColumns(items) {
-  if (items.length < 16) return null;
+  if (items.length < 12) return null;
   const pageLeft = Math.min(...items.map((i) => i.x));
   const pageRight = Math.max(...items.map((i) => i.x + i.width));
   const width = pageRight - pageLeft;

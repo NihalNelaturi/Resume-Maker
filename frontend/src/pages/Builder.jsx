@@ -205,23 +205,23 @@ export default function Builder() {
   // --- Import / backup / reset ---------------------------------------------
 
   function mergeImportedProfile(existing, parsed) {
+    // Import replaces what the parser found (so re-uploading the same resume
+    // does not duplicate it); existing data is kept only where the parser
+    // produced nothing.
     const personal = { ...existing.personal };
     Object.keys(parsed.personal).forEach((key) => {
-      if (!hasText(personal[key]) && hasText(parsed.personal[key])) personal[key] = parsed.personal[key];
+      if (hasText(parsed.personal[key])) personal[key] = parsed.personal[key];
     });
-    const skills = { ...existing.skills };
-    Object.entries(parsed.skills).forEach(([category, items]) => {
-      skills[category] = [...new Set([...(skills[category] || []), ...items])];
-    });
+    const pickList = (parsedList, existingList) => (parsedList.length ? parsedList : existingList);
     return {
       ...existing,
       personal,
-      skills,
-      experience: [...existing.experience, ...parsed.experience],
-      projects: [...existing.projects, ...parsed.projects],
-      education: [...existing.education, ...parsed.education],
-      certifications: [...existing.certifications, ...parsed.certifications],
-      achievements: [...existing.achievements, ...parsed.achievements],
+      skills: Object.keys(parsed.skills).length ? parsed.skills : existing.skills,
+      experience: pickList(parsed.experience, existing.experience),
+      projects: pickList(parsed.projects, existing.projects),
+      education: pickList(parsed.education, existing.education),
+      certifications: pickList(parsed.certifications, existing.certifications),
+      achievements: pickList(parsed.achievements, existing.achievements),
       bulletBank: existing.bulletBank || {},
     };
   }
@@ -242,7 +242,7 @@ export default function Builder() {
       !Object.keys(profile.skills || {}).length;
 
     if (!isEmpty) {
-      const confirmed = window.confirm("Import will merge into your current resume (appending new items). Continue?");
+      const confirmed = window.confirm("Replace your current resume with the imported one?");
       if (!confirmed) return;
     }
 

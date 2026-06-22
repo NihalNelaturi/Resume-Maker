@@ -94,9 +94,8 @@ export default function ImportResumePanel({
       ) : null}
 
       <p className="mt-3 text-xs text-slate-500">
-        Importing fills empty fields and appends experience, projects, education, and skills. To replace everything with
-        a fresh resume, use <strong>Clear all &amp; start fresh</strong> first, then upload. Scanned or image-only PDFs
-        have no selectable text — paste the text in that case.
+        Importing replaces your current resume with the uploaded one, then you review and edit each tab. Scanned or
+        image-only PDFs have no selectable text — use <strong>Paste text</strong> in that case.
       </p>
     </section>
   );
