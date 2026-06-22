@@ -60,6 +60,32 @@ export const PDF_TEMPLATES = [
       density: 1.0,
     },
   },
+  {
+    id: "technical",
+    name: "Technical",
+    description: "Left-aligned with filled heading bands. Bold, scannable, ATS-safe.",
+    theme: {
+      font: "sans",
+      headerAlign: "left",
+      headingStyle: "filled", // light accent band behind each heading
+      accent: [37, 99, 235], // blue
+      nameColor: [15, 23, 42],
+      density: 1.0,
+    },
+  },
+  {
+    id: "executive",
+    name: "Executive",
+    description: "Serif with filled heading bands and a maroon accent. Senior, formal.",
+    theme: {
+      font: "serif",
+      headerAlign: "center",
+      headingStyle: "filled",
+      accent: [136, 19, 55], // maroon
+      nameColor: [15, 23, 42],
+      density: 1.0,
+    },
+  },
 ];
 
 export const DEFAULT_TEMPLATE_ID = "classic";

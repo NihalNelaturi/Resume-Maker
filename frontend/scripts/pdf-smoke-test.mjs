@@ -90,8 +90,41 @@ for (const template of PDF_TEMPLATES) {
   }
 }
 
+// Auto-fit: a long résumé must compress to a single page when autoFit is on,
+// and overflow to multiple pages when it is off (proving the knob works).
+const longResume = {
+  ...resume,
+  professional_summary: "Experienced engineer. ".repeat(40),
+  experience: Array.from({ length: 5 }, (_, i) => ({
+    title: `Senior Engineer ${i + 1}`,
+    company: `Company ${i + 1}`,
+    start_date: "2018",
+    end_date: "2024",
+    bullets: Array.from({ length: 5 }, (_, j) => `Delivered measurable outcome ${j + 1} improving a key metric by ${10 + j}%.`),
+  })),
+  projects: Array.from({ length: 4 }, (_, i) => ({
+    name: `Project ${i + 1}`,
+    technologies: ["Python", "React", "Docker"],
+    bullets: ["Built and shipped a substantial feature used across the platform."],
+  })),
+};
+
+try {
+  const fitted = await generateClientResumePdf(longResume, { templateId: "classic", autoFit: true });
+  const unfitted = await generateClientResumePdf(longResume, { templateId: "classic", autoFit: false });
+  if (fitted.pages === 1) {
+    console.log(`PASS  auto-fit: long résumé compressed to ${fitted.pages} page (vs ${unfitted.pages} unfitted)`);
+  } else {
+    failures += 1;
+    console.error(`FAIL  auto-fit: expected 1 page, got ${fitted.pages}`);
+  }
+} catch (error) {
+  failures += 1;
+  console.error(`FAIL  auto-fit: threw ${error?.message || error}`);
+}
+
 if (failures) {
-  console.error(`\nPDF smoke test failed (${failures} template(s)).`);
+  console.error(`\nPDF smoke test failed (${failures} check(s)).`);
   process.exit(1);
 }
-console.log("\nPDF smoke test passed for all templates.");
+console.log("\nPDF smoke test passed.");

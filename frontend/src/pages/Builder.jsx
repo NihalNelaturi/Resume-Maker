@@ -95,6 +95,14 @@ export default function Builder() {
       return DEFAULT_TEMPLATE_ID;
     }
   });
+  const [pdfOptions, setPdfOptions] = useState(() => {
+    const defaults = { paperSize: "letter", autoFit: true, fontSize: "M", accent: null };
+    try {
+      return { ...defaults, ...JSON.parse(localStorage.getItem("resmake-pdf-options") || "{}") };
+    } catch {
+      return defaults;
+    }
+  });
 
   useEffect(() => {
     saveCommandCenterState({ profile, versions, activeVersionId });
@@ -422,14 +430,45 @@ export default function Builder() {
     }
   }
 
-  async function renderPdfWithTemplate(templateId) {
-    const { blob, filename } = await generateClientResumePdf(cleanedResume, { templateId });
+  function buildPdfRenderOptions(templateId, optionsOverride = pdfOptions) {
+    const fontScaleByLabel = { S: 0.92, M: 1, L: 1.08 };
+    return {
+      templateId,
+      paperSize: optionsOverride.paperSize,
+      autoFit: optionsOverride.autoFit,
+      fontScale: fontScaleByLabel[optionsOverride.fontSize] || 1,
+      accent: optionsOverride.accent || undefined,
+    };
+  }
+
+  async function renderPdfWithTemplate(templateId, optionsOverride) {
+    const { blob, filename } = await generateClientResumePdf(
+      cleanedResume,
+      buildPdfRenderOptions(templateId, optionsOverride),
+    );
     if (pdfUrl) URL.revokeObjectURL(pdfUrl);
     const nextUrl = URL.createObjectURL(blob);
     setPdfUrl(nextUrl);
     setPdfFilename(filename);
     touchActiveVersion({ generatedPdfName: filename });
     return filename;
+  }
+
+  function handleUpdatePdfOptions(patch) {
+    const next = { ...pdfOptions, ...patch };
+    setPdfOptions(next);
+    try {
+      localStorage.setItem("resmake-pdf-options", JSON.stringify(next));
+    } catch {
+      // Ignore storage failures; selection still applies in-session.
+    }
+    // Live-refresh the preview if one is already showing.
+    if (pdfUrl && !missingRequiredHeader) {
+      setIsGenerating(true);
+      renderPdfWithTemplate(pdfTemplateId, next)
+        .catch(() => setMessage("Could not re-render the preview with the new options."))
+        .finally(() => setIsGenerating(false));
+    }
   }
 
   async function handleGenerate() {
@@ -720,6 +759,7 @@ export default function Builder() {
                 disabled={isBusy}
                 onSelect={handleSelectTemplate}
               />
+              <PdfOptionsControls options={pdfOptions} disabled={isBusy} onChange={handleUpdatePdfOptions} />
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" className="btn-secondary" onClick={handleExportLatex} disabled={serverActionDisabled}>
                   <FileCode2 size={16} />
@@ -897,6 +937,110 @@ function OnboardingCard() {
         Tip: your data is saved only in this browser. Use Export Backup in the Export step to keep a copy.
       </p>
     </section>
+  );
+}
+
+const ACCENT_SWATCHES = [
+  { label: "Template default", value: null, color: "#94a3b8" },
+  { label: "Blue", value: "#1d4ed8", color: "#1d4ed8" },
+  { label: "Teal", value: "#0f766e", color: "#0f766e" },
+  { label: "Maroon", value: "#881337", color: "#881337" },
+  { label: "Violet", value: "#7c3aed", color: "#7c3aed" },
+  { label: "Slate", value: "#1f2937", color: "#1f2937" },
+];
+
+function SegmentedControl({ label, options, value, disabled, onChange }) {
+  return (
+    <div>
+      <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <div className="mt-1.5 inline-flex rounded-md border border-slate-200 bg-white p-0.5">
+        {options.map((option) => {
+          const active = option.value === value;
+          return (
+            <button
+              key={String(option.value)}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(option.value)}
+              className={`rounded px-2.5 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                active ? "bg-sky-700 text-white" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PdfOptionsControls({ options, disabled, onChange }) {
+  return (
+    <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+        <SegmentedControl
+          label="Paper size"
+          value={options.paperSize}
+          disabled={disabled}
+          onChange={(value) => onChange({ paperSize: value })}
+          options={[
+            { label: "Letter", value: "letter" },
+            { label: "A4", value: "a4" },
+          ]}
+        />
+        <SegmentedControl
+          label="Fit"
+          value={options.autoFit}
+          disabled={disabled}
+          onChange={(value) => onChange({ autoFit: value })}
+          options={[
+            { label: "Auto one page", value: true },
+            { label: "Off", value: false },
+          ]}
+        />
+        <SegmentedControl
+          label="Font size"
+          value={options.fontSize}
+          disabled={disabled || options.autoFit}
+          onChange={(value) => onChange({ fontSize: value })}
+          options={[
+            { label: "S", value: "S" },
+            { label: "M", value: "M" },
+            { label: "L", value: "L" },
+          ]}
+        />
+      </div>
+
+      <div className="mt-3">
+        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Accent color</span>
+        <div className="mt-1.5 flex flex-wrap gap-2">
+          {ACCENT_SWATCHES.map((swatch) => {
+            const active = (options.accent || null) === swatch.value;
+            return (
+              <button
+                key={swatch.label}
+                type="button"
+                disabled={disabled}
+                title={swatch.label}
+                onClick={() => onChange({ accent: swatch.value })}
+                className={`h-7 w-7 rounded-full border-2 transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  active ? "border-sky-600 ring-2 ring-sky-200" : "border-white shadow"
+                }`}
+                style={{ backgroundColor: swatch.color }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {options.autoFit ? (
+        <p className="mt-3 text-xs text-slate-500">
+          Auto-fit scales font size and spacing to keep your resume on one page. Turn it off to set the font size
+          manually.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

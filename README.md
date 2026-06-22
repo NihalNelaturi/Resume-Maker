@@ -24,8 +24,10 @@ User
 - Add and remove skill groups, experience bullets, project bullets, projects, education, certifications, and achievements
 - Configurable resume section ordering
 - Live structured resume preview
-- Instant in-browser PDF generation (primary engine) with selectable templates:
-  Classic, Modern Blue, Compact, and Elegant Serif
+- Instant in-browser PDF generation (primary engine) with six selectable
+  templates (Classic, Modern Blue, Compact, Elegant Serif, Technical,
+  Executive) and customization: auto-fit-to-one-page, paper size (Letter/A4),
+  font size, and accent color
 - Optional LaTeX PDF generation through the FastAPI backend (local/Docker only)
 - Role-aware resume and job-description analysis driven by a data-driven keyword
   library (no person- or company-specific hardcoding)
