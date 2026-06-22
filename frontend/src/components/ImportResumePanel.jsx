@@ -1,10 +1,16 @@
 import { useRef, useState } from "react";
-import { FileUp, ClipboardPaste, Loader2 } from "lucide-react";
+import { FileUp, ClipboardPaste, Loader2, RotateCcw } from "lucide-react";
 import { IMPORT_ACCEPT } from "../services/resumeImport.js";
 
 // Bootstrap a profile from an existing resume instead of starting from scratch.
 // Supports uploading a PDF/DOCX/TXT/MD file, or pasting raw resume text.
-export default function ImportResumePanel({ disabled = false, isImporting = false, onImportFile, onImportText }) {
+export default function ImportResumePanel({
+  disabled = false,
+  isImporting = false,
+  onImportFile,
+  onImportText,
+  onReset,
+}) {
   const inputRef = useRef(null);
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -44,6 +50,12 @@ export default function ImportResumePanel({ disabled = false, isImporting = fals
             <ClipboardPaste size={16} />
             Paste text
           </button>
+          {onReset ? (
+            <button type="button" className="btn-danger" onClick={onReset} disabled={disabled}>
+              <RotateCcw size={16} />
+              Clear all & start fresh
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -78,8 +90,9 @@ export default function ImportResumePanel({ disabled = false, isImporting = fals
       ) : null}
 
       <p className="mt-3 text-xs text-slate-500">
-        Tip: importing replaces empty profile fields and appends experience, projects, education, and skills. Scanned or
-        image-only PDFs have no selectable text — paste the text in that case.
+        Importing fills empty fields and appends experience, projects, education, and skills. To replace everything with
+        a fresh resume, use <strong>Clear all &amp; start fresh</strong> first, then upload. Scanned or image-only PDFs
+        have no selectable text — paste the text in that case.
       </p>
     </section>
   );

@@ -717,6 +717,7 @@ export default function Builder() {
             isImporting={isImporting}
             onImportFile={importResumeFile}
             onImportText={importResumeText}
+            onReset={resetLocalData}
           />
           <MasterProfileEditor profile={profile} onChange={updateMasterProfile} />
         </WorkflowLayout>

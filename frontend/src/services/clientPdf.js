@@ -316,18 +316,21 @@ function rightText(ctx, text, y) {
   doc.text(normalized, page.width - page.marginX, y, { align: "right" });
 }
 
-// Draws the whole resume into `doc` at the given font scale (fs) and advance
-// scale (adv). Returns nothing; the caller reads doc.getNumberOfPages().
-function renderResume(doc, resume, theme, page, fs, adv) {
+// Draws the whole resume into `doc`. `fs` scales fonts, `adv` scales per-line
+// vertical advances (line heights), and `gap` scales the structural gaps
+// between sections/entries. Splitting `adv` from `gap` lets auto-fit fill a
+// short page by spreading sections apart without loosening line spacing or
+// enlarging text. Returns the final y (content bottom).
+function renderResume(doc, resume, theme, page, fs, adv, gap) {
   const spacing = {
-    sectionTopGap: 6.2 * adv,
-    sectionBodyGap: 17 * adv,
-    nameToContactGap: 20 * adv,
-    headerToFirstSectionGap: 11.5 * adv,
+    sectionTopGap: 6.2 * gap,
+    sectionBodyGap: 17 * gap,
+    nameToContactGap: 20 * gap,
+    headerToFirstSectionGap: 11.5 * gap,
   };
   const ctx = { doc, theme, page, fs, adv, spacing };
   const maxWidth = page.width - page.marginX * 2;
-  const blockGap = 3 * adv;
+  const blockGap = 3 * gap;
   let y = page.marginY;
 
   doc.setTextColor(...(theme.nameColor || TEXT_COLOR));
@@ -506,19 +509,27 @@ function renderResume(doc, resume, theme, page, fs, adv) {
       renderedSections += 1;
     }
   });
+
+  return y;
 }
 
-async function renderCandidate(resume, theme, paperSize, familyKey, fs, adv) {
+async function renderCandidate(resume, theme, paperSize, familyKey, fs, adv, gap) {
   const doc = new jsPDF({ unit: "pt", format: paperSize === "a4" ? "a4" : "letter", putOnlyUsedFonts: true, compress: true });
   const fontName = await registerFontFamily(doc, familyKey);
   doc.setFont(fontName, "normal");
   const page = makePage(paperSize);
-  renderResume(doc, resume, { ...theme, font: fontName }, page, fs, adv);
-  return { doc, pages: doc.getNumberOfPages() };
+  const finalY = renderResume(doc, resume, { ...theme, font: fontName }, page, fs, adv, gap);
+  return { doc, pages: doc.getNumberOfPages(), finalY, page };
 }
 
-// Scales tried (largest first) when auto-fitting to a single page.
-const AUTO_FIT_SCALES = [1, 0.96, 0.92, 0.88, 0.84, 0.8, 0.76, 0.72];
+// Font scales tried (largest first) when auto-fitting. Capped so short resumes
+// get modestly larger (readable) text; the rest of the page is filled by
+// spreading sections apart.
+const FONT_FIT_SCALES = [1.2, 1.14, 1.08, 1.02, 0.98, 0.94, 0.9, 0.86, 0.82, 0.78, 0.74, 0.72];
+// How far structural spacing may grow to fill a short page.
+const MAX_FILL = 2.8;
+// Target fraction of the usable page height to fill.
+const FILL_TARGET = 0.92;
 
 export async function generateClientResumePdf(resume, options = {}) {
   const template = getTemplate(options.templateId);
@@ -541,15 +552,52 @@ export async function generateClientResumePdf(resume, options = {}) {
   let chosen = null;
 
   if (autoFit) {
-    // Pick the largest scale that fits one page; fall back to the smallest.
-    for (const scale of AUTO_FIT_SCALES) {
-      const candidate = await renderCandidate(resume, theme, paperSize, familyKey, scale, scale * density);
+    // Phase 1 — font fit: largest font scale (capped) that fits one page.
+    let chosenFs = FONT_FIT_SCALES[FONT_FIT_SCALES.length - 1];
+    for (const fs of FONT_FIT_SCALES) {
+      const candidate = await renderCandidate(resume, theme, paperSize, familyKey, fs, fs * density, fs * density);
       chosen = candidate;
+      chosenFs = fs;
       if (candidate.pages === 1) break;
+    }
+
+    // Phase 2 — fill: if there is vertical room left, grow the structural gaps
+    // (not the text or line spacing) so the resume fills the page nicely.
+    if (chosen.pages === 1) {
+      const { page } = chosen;
+      const usable = page.bottom - page.marginY;
+      const contentHeight = chosen.finalY - page.marginY;
+      if (contentHeight > 0 && contentHeight < usable * 0.9) {
+        let fill = Math.min((usable * FILL_TARGET) / contentHeight, MAX_FILL);
+        for (let attempt = 0; attempt < 5 && fill > 1.02; attempt += 1) {
+          const candidate = await renderCandidate(
+            resume,
+            theme,
+            paperSize,
+            familyKey,
+            chosenFs,
+            chosenFs * density,
+            chosenFs * density * fill,
+          );
+          if (candidate.pages === 1 && candidate.finalY <= page.bottom) {
+            chosen = candidate;
+            break;
+          }
+          fill *= 0.9;
+        }
+      }
     }
   } else {
     const fontScale = Number.isFinite(options.fontScale) ? options.fontScale : 1;
-    chosen = await renderCandidate(resume, theme, paperSize, familyKey, fontScale, fontScale * density);
+    chosen = await renderCandidate(
+      resume,
+      theme,
+      paperSize,
+      familyKey,
+      fontScale,
+      fontScale * density,
+      fontScale * density,
+    );
   }
 
   return {
