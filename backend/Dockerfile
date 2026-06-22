@@ -13,7 +13,15 @@ RUN apt-get update \
         texlive-latex-base \
         texlive-latex-extra \
         texlive-latex-recommended \
+        texlive-luatex \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+# Warm the LuaLaTeX font cache so the first export isn't slow, and verify the
+# Unicode font loads.
+RUN printf '%s' '\documentclass{article}\usepackage{fontspec}\setmainfont{DejaVu Serif}\begin{document}warmup\end{document}' > /tmp/warm.tex \
+    && (cd /tmp && lualatex -interaction=nonstopmode warm.tex >/dev/null 2>&1 || true) \
+    && rm -f /tmp/warm.*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

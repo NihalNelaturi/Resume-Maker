@@ -58,8 +58,8 @@ class Header(ResumeBaseModel):
 
 
 class Education(ResumeBaseModel):
-    institution: str = Field(..., min_length=2, max_length=160)
-    degree: str = Field(..., min_length=2, max_length=160)
+    institution: str = Field(default="", max_length=160)
+    degree: str = Field(default="", max_length=160)
     location: str | None = Field(default=None, max_length=120)
     start_date: str | None = Field(default=None, max_length=40)
     end_date: str | None = Field(default=None, max_length=40)
@@ -78,13 +78,13 @@ class Education(ResumeBaseModel):
 
 
 class Project(ResumeBaseModel):
-    name: str = Field(..., min_length=2, max_length=140)
+    name: str = Field(default="", max_length=140)
     role: str | None = Field(default=None, max_length=120)
     link: str | None = Field(default=None, max_length=220)
     start_date: str | None = Field(default=None, max_length=40)
     end_date: str | None = Field(default=None, max_length=40)
     technologies: list[str] = Field(default_factory=list, max_length=20)
-    bullets: list[str] = Field(..., min_length=1, max_length=8)
+    bullets: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("role", "link", "start_date", "end_date", mode="before")
     @classmethod
@@ -99,19 +99,16 @@ class Project(ResumeBaseModel):
     @field_validator("bullets")
     @classmethod
     def clean_bullets(cls, values: list[str]) -> list[str]:
-        cleaned = _clean_string_list(values)
-        if not cleaned:
-            raise ValueError("At least one non-empty project bullet is required.")
-        return cleaned
+        return _clean_string_list(values)
 
 
 class Experience(ResumeBaseModel):
-    title: str = Field(..., min_length=2, max_length=140)
-    company: str = Field(..., min_length=2, max_length=160)
+    title: str = Field(default="", max_length=140)
+    company: str = Field(default="", max_length=160)
     location: str | None = Field(default=None, max_length=120)
     start_date: str | None = Field(default=None, max_length=40)
     end_date: str | None = Field(default=None, max_length=40)
-    bullets: list[str] = Field(..., min_length=1, max_length=8)
+    bullets: list[str] = Field(default_factory=list, max_length=8)
 
     @field_validator("location", "start_date", "end_date", mode="before")
     @classmethod
@@ -121,27 +118,21 @@ class Experience(ResumeBaseModel):
     @field_validator("bullets")
     @classmethod
     def clean_bullets(cls, values: list[str]) -> list[str]:
-        cleaned = _clean_string_list(values)
-        if not cleaned:
-            raise ValueError("At least one non-empty experience bullet is required.")
-        return cleaned
+        return _clean_string_list(values)
 
 
 class Skill(ResumeBaseModel):
-    category: str = Field(..., min_length=2, max_length=80)
-    items: list[str] = Field(..., min_length=1, max_length=30)
+    category: str = Field(default="", max_length=80)
+    items: list[str] = Field(default_factory=list, max_length=30)
 
     @field_validator("items")
     @classmethod
     def clean_items(cls, values: list[str]) -> list[str]:
-        cleaned = _clean_string_list(values)
-        if not cleaned:
-            raise ValueError("At least one non-empty skill item is required.")
-        return cleaned
+        return _clean_string_list(values)
 
 
 class Certification(ResumeBaseModel):
-    title: str = Field(..., min_length=2, max_length=160)
+    title: str = Field(default="", max_length=160)
     issuer: str | None = Field(default=None, max_length=120)
     date: str | None = Field(default=None, max_length=40)
     link: str | None = Field(default=None, max_length=220)
@@ -153,7 +144,7 @@ class Certification(ResumeBaseModel):
 
 
 class Achievement(ResumeBaseModel):
-    title: str = Field(..., min_length=2, max_length=160)
+    title: str = Field(default="", max_length=160)
     description: str | None = Field(default=None, max_length=400)
     date: str | None = Field(default=None, max_length=40)
 

@@ -27,9 +27,11 @@ class CompilerBinary:
 
 
 class LatexCompiler:
-    ALLOWED_COMPILERS = ("tectonic", "pdflatex")
+    # LuaLaTeX/XeLaTeX/Tectonic handle Unicode (e.g. Greek) natively via
+    # fontspec; pdflatex is the ASCII-only fallback.
+    ALLOWED_COMPILERS = ("lualatex", "xelatex", "tectonic", "pdflatex")
 
-    def __init__(self, preferred: str = "tectonic", fallback: str = "pdflatex", timeout_seconds: int = 30) -> None:
+    def __init__(self, preferred: str = "lualatex", fallback: str = "pdflatex", timeout_seconds: int = 90) -> None:
         self.preferred = preferred
         self.fallback = fallback
         self.timeout_seconds = timeout_seconds
@@ -53,7 +55,7 @@ class LatexCompiler:
             if compiler.name == "tectonic":
                 self._run_tectonic(compiler.path, workdir)
             else:
-                self._run_pdflatex(compiler.path, workdir)
+                self._run_latex_engine(compiler.name, compiler.path, workdir)
 
             if not pdf_path.exists():
                 raise LaTeXCompilationFailed("The LaTeX compiler finished without producing a PDF.")
@@ -62,7 +64,7 @@ class LatexCompiler:
 
     def _resolve_compiler(self) -> CompilerBinary:
         env_choice = os.getenv("LATEX_COMPILER", "").strip().lower()
-        candidates = [env_choice, self.preferred, self.fallback]
+        candidates = [env_choice, self.preferred, "xelatex", "tectonic", self.fallback]
 
         for candidate in candidates:
             if candidate not in self.ALLOWED_COMPILERS:
@@ -79,7 +81,9 @@ class LatexCompiler:
         if result.returncode != 0:
             raise LaTeXCompilationFailed(self._format_error("Tectonic", result))
 
-    def _run_pdflatex(self, compiler_path: str, workdir: Path) -> None:
+    def _run_latex_engine(self, name: str, compiler_path: str, workdir: Path) -> None:
+        # pdflatex, lualatex, and xelatex share the same CLI flags. Two passes
+        # resolve any references/right-aligned dates.
         command = [
             compiler_path,
             "-interaction=nonstopmode",
@@ -90,11 +94,11 @@ class LatexCompiler:
 
         first_pass = self._run(command, workdir)
         if first_pass.returncode != 0:
-            raise LaTeXCompilationFailed(self._format_error("pdflatex", first_pass))
+            raise LaTeXCompilationFailed(self._format_error(name, first_pass))
 
         second_pass = self._run(command, workdir)
         if second_pass.returncode != 0:
-            raise LaTeXCompilationFailed(self._format_error("pdflatex", second_pass))
+            raise LaTeXCompilationFailed(self._format_error(name, second_pass))
 
     def _run(self, command: list[str], workdir: Path) -> subprocess.CompletedProcess[str]:
         try:

@@ -1,8 +1,17 @@
 \documentclass[10pt,letterpaper]{article}
 \usepackage[margin=0.38in]{geometry}
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
-\usepackage{lmodern}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\else
+  % LuaLaTeX/XeLaTeX: native Unicode (Greek, Cyrillic, accents) via fontspec.
+  % DejaVu Serif has full Greek/Latin/Cyrillic coverage (Latin Modern lacks
+  % lowercase Greek), and matches the browser engine's font.
+  \usepackage{fontspec}
+  \setmainfont{DejaVu Serif}[Scale=0.92]
+\fi
 \usepackage{xcolor}
 \definecolor{linkblue}{HTML}{1D4ED8}
 \usepackage[colorlinks=true,urlcolor=linkblue,linkcolor=linkblue]{hyperref}
@@ -59,7 +68,7 @@
 ((* elif section == "experience" *))
 \section*{Experience}
 ((* for experience in resume.experience *))
-\textbf{((( experience.title )))}, ((( experience.company ))) \hfill \resumeDate{((* if experience.start_date *))((( experience.start_date )))((* endif *))((* if experience.end_date *)) - ((( experience.end_date )))((* endif *))}\\[-1pt]
+\textbf{((( experience.title )))}((* if experience.company *)), ((( experience.company )))((* endif *)) \hfill \resumeDate{((* if experience.start_date *))((( experience.start_date )))((* endif *))((* if experience.end_date *)) - ((( experience.end_date )))((* endif *))}\\[-1pt]
 ((* if experience.location *))
 \resumeMeta{((( experience.location ))) }\\[-3pt]
 ((* else *))

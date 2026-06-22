@@ -62,12 +62,37 @@ export function resumeFromProfileVersion(profile, version) {
   };
 }
 
-// Build a resume from the entire profile (every item included). Used by the
-// single-resume tabbed editor, which has no per-version item selection.
+function hasAnyText(...values) {
+  return values.some((value) => normalizeText(value));
+}
+
+function hasAnyBullet(bullets) {
+  return normalizeList(bullets).length > 0;
+}
+
+// Build a resume from the entire profile (every item included). Empty entries
+// (no identifying text and no content) are dropped so they don't render as
+// blank lines and don't get rejected by the backend (LaTeX) export.
 export function resumeFromProfile(profile) {
   const skills = Object.entries(profile.skills || {})
     .map(([category, items]) => ({ category, items: normalizeList(items) }))
     .filter((skill) => skill.items.length);
+
+  const experience = (profile.experience || [])
+    .map(stripId)
+    .filter((item) => hasAnyText(item.title, item.company) || hasAnyBullet(item.bullets));
+  const projects = (profile.projects || [])
+    .map(stripId)
+    .filter((item) => hasAnyText(item.name, item.role) || hasAnyBullet(item.bullets));
+  const education = (profile.education || [])
+    .map(stripId)
+    .filter((item) => hasAnyText(item.institution, item.degree));
+  const certifications = (profile.certifications || [])
+    .map(stripId)
+    .filter((item) => hasAnyText(item.title));
+  const achievements = (profile.achievements || [])
+    .map(stripId)
+    .filter((item) => hasAnyText(item.title, item.description));
 
   return {
     header: {
@@ -81,11 +106,11 @@ export function resumeFromProfile(profile) {
     },
     professional_summary: profile.personal?.professional_summary || "",
     skills,
-    experience: (profile.experience || []).map(stripId),
-    projects: (profile.projects || []).map(stripId),
-    education: (profile.education || []).map(stripId),
-    certifications: (profile.certifications || []).map(stripId),
-    achievements: (profile.achievements || []).map(stripId),
+    experience,
+    projects,
+    education,
+    certifications,
+    achievements,
     section_order: DEFAULT_SECTION_ORDER,
   };
 }
