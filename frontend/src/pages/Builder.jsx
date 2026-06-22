@@ -78,6 +78,7 @@ export default function Builder() {
   const [message, setMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [extractedText, setExtractedText] = useState("");
   const [pdfUrl, setPdfUrl] = useState("");
   const [pdfFilename, setPdfFilename] = useState("resume.pdf");
   const [pdfTemplateId, setPdfTemplateId] = useState(() => {
@@ -263,6 +264,7 @@ export default function Builder() {
     setMessage("");
     try {
       const text = await extractTextFromFile(file);
+      setExtractedText(text);
       applyParsedResume(text, file.name);
     } catch {
       setMessage("Could not read that file. Supported: PDF, DOCX, TXT, MD. For scanned/image PDFs, paste the text.");
@@ -339,6 +341,7 @@ export default function Builder() {
           <ImportResumePanel
             disabled={isBusy}
             isImporting={isImporting}
+            extractedText={extractedText}
             onImportFile={importResumeFile}
             onImportText={importResumeText}
             onReset={resetLocalData}

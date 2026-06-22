@@ -42,7 +42,7 @@ export default function EducationForm({ education = [], onChange }) {
           </p>
         ) : null}
         {education.map((item, index) => (
-          <div key={`${item.institution}-${index}`} className="rounded-md border border-slate-200 p-3">
+          <div key={item.id ?? index} className="rounded-md border border-slate-200 p-3">
             <div className="grid gap-3 md:grid-cols-2">
               <label>
                 <span className="field-label">Institution</span>

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FileUp, ClipboardPaste, Loader2, RotateCcw } from "lucide-react";
+import { FileUp, ClipboardPaste, Loader2, RotateCcw, FileSearch } from "lucide-react";
 import { IMPORT_ACCEPT } from "../services/resumeImport.js";
 
 // Bootstrap a profile from an existing resume instead of starting from scratch.
@@ -7,6 +7,7 @@ import { IMPORT_ACCEPT } from "../services/resumeImport.js";
 export default function ImportResumePanel({
   disabled = false,
   isImporting = false,
+  extractedText = "",
   onImportFile,
   onImportText,
   onReset,
@@ -21,6 +22,11 @@ export default function ImportResumePanel({
     event.target.value = "";
   }
 
+  function reviewExtractedText() {
+    setPasteText(extractedText);
+    setShowPaste(true);
+  }
+
   return (
     <section className="section-panel mb-4 border-sky-200 bg-sky-50/40">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -32,21 +38,11 @@ export default function ImportResumePanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => inputRef.current?.click()}
-            disabled={disabled}
-          >
+          <button type="button" className="btn-primary" onClick={() => inputRef.current?.click()} disabled={disabled}>
             {isImporting ? <Loader2 size={16} className="animate-spin" /> : <FileUp size={16} />}
             {isImporting ? "Importing" : "Upload file"}
           </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => setShowPaste((value) => !value)}
-            disabled={disabled}
-          >
+          <button type="button" className="btn-secondary" onClick={() => setShowPaste((value) => !value)} disabled={disabled}>
             <ClipboardPaste size={16} />
             Paste text
           </button>
@@ -59,21 +55,29 @@ export default function ImportResumePanel({
         </div>
       </div>
 
-      <input
-        ref={inputRef}
-        type="file"
-        accept={IMPORT_ACCEPT}
-        className="hidden"
-        onChange={handleFileChange}
-      />
+      <input ref={inputRef} type="file" accept={IMPORT_ACCEPT} className="hidden" onChange={handleFileChange} />
+
+      {extractedText ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <span className="text-xs text-amber-900">
+            Missing some sections? See exactly what was read from your file, fix the section headings, and re-import.
+          </span>
+          <button type="button" className="btn-secondary py-1" onClick={reviewExtractedText} disabled={disabled}>
+            <FileSearch size={15} />
+            Review extracted text
+          </button>
+        </div>
+      ) : null}
 
       {showPaste ? (
         <div className="mt-4">
           <textarea
-            className="textarea min-h-40"
+            className="textarea min-h-48 font-mono text-xs"
             value={pasteText}
             onChange={(event) => setPasteText(event.target.value)}
-            placeholder="Paste your full resume text here, then click Import text..."
+            placeholder={
+              "Paste your full resume text here (one item per line). Use clear section headings on their own line, e.g.\n\nSUMMARY\n...\nSKILLS\nLanguages: Python, SQL\nEXPERIENCE\nSoftware Engineer, Acme | 2021 - Present\n- Did things"
+            }
             disabled={disabled}
           />
           <div className="mt-2 flex justify-end">

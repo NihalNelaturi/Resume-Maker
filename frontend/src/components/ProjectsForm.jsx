@@ -49,7 +49,7 @@ export default function ProjectsForm({ projects = [], onChange }) {
           </p>
         ) : null}
         {projects.map((project, projectIndex) => (
-          <div key={`${project.name}-${projectIndex}`} className="rounded-md border border-slate-200 p-3">
+          <div key={project.id ?? projectIndex} className="rounded-md border border-slate-200 p-3">
             <div className="grid gap-3 md:grid-cols-2">
               <label>
                 <span className="field-label">Project name</span>

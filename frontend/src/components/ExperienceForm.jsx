@@ -45,7 +45,7 @@ export default function ExperienceForm({ experience = [], onChange }) {
           </p>
         ) : null}
         {experience.map((item, itemIndex) => (
-          <div key={`${item.company}-${itemIndex}`} className="rounded-md border border-slate-200 p-3">
+          <div key={item.id ?? itemIndex} className="rounded-md border border-slate-200 p-3">
             <div className="grid gap-3 md:grid-cols-2">
               <label>
                 <span className="field-label">Role / title</span>

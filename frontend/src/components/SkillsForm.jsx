@@ -49,7 +49,7 @@ export default function SkillsForm({ skills = [], onChange }) {
           </p>
         ) : null}
         {skills.map((skill, index) => (
-          <div key={`${skill.category}-${index}`} className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[180px_1fr_auto]">
+          <div key={skill.id ?? index} className="grid gap-3 rounded-md border border-slate-200 p-3 md:grid-cols-[180px_1fr_auto]">
             <label>
               <span className="field-label">Category</span>
               <input

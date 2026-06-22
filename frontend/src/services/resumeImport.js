@@ -33,28 +33,39 @@ function stripBullet(line) {
   return line.replace(BULLET_RE, "").trim();
 }
 
-function matchSectionHeading(line) {
-  const normalized = cleanLine(line)
-    .replace(/[:#*_]+$/g, "")
-    .replace(/^[#*_\s]+/g, "")
-    .toLowerCase()
-    .trim();
-  if (!normalized || normalized.length > 60 || normalized.split(" ").length > 8) return null;
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
-  const noSpaces = normalized.replace(/\s+/g, "");
+// Detect a section heading. Returns { key, remainder } where remainder is any
+// inline content that followed the heading on the same line (e.g. the "Python,
+// SQL" in "Skills: Python, SQL"), or null when the line is not a heading.
+//
+// Matching is deliberately strict — whole-line headings, or a heading followed
+// by an explicit ":"/"|" separator. Loose prefix/suffix matching is avoided
+// because it misclassifies ordinary lines like "relevant experience" as
+// headings and drops their content.
+function detectHeading(line) {
+  const cleaned = cleanLine(line).replace(/^[#*_\s]+/g, "").replace(/[#*_]+$/g, "");
+  if (!cleaned || cleaned.length > 80) return null;
+  const lower = cleaned.toLowerCase().replace(/:$/, "").trim();
+  const noSpaces = lower.replace(/\s+/g, "");
 
   for (const section of SECTIONS) {
-    if (section.patterns.some((pattern) => {
-      if (normalized === pattern || normalized === `${pattern}:`) return true;
-      if (noSpaces === pattern.replace(/\s+/g, "")) return true;
-      if (normalized.startsWith(`${pattern} `)) return true;
-      if (normalized.endsWith(` ${pattern}`)) return true;
-      return false;
-    })) {
-      return section.key;
+    for (const pattern of section.patterns) {
+      if (lower === pattern || noSpaces === pattern.replace(/\s+/g, "")) {
+        return { key: section.key, remainder: "" };
+      }
+      const inline = cleaned.match(new RegExp(`^${escapeRegExp(pattern)}\\s*[:|]\\s*(.+)$`, "i"));
+      if (inline) return { key: section.key, remainder: inline[1].trim() };
     }
   }
   return null;
+}
+
+function matchSectionHeading(line) {
+  const heading = detectHeading(line);
+  return heading ? heading.key : null;
 }
 
 function extractContact(text) {
@@ -131,10 +142,12 @@ function splitSections(lines) {
   const buckets = { header: [] };
   let current = "header";
   for (const raw of lines) {
-    const heading = matchSectionHeading(raw);
+    const heading = detectHeading(raw);
     if (heading) {
-      current = heading;
+      current = heading.key;
       if (!buckets[current]) buckets[current] = [];
+      // Keep any content that shared the heading's line (e.g. "Skills: Python, SQL").
+      if (heading.remainder) buckets[current].push(heading.remainder);
       continue;
     }
     if (!buckets[current]) buckets[current] = [];
