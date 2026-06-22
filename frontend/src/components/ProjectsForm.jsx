@@ -1,10 +1,8 @@
 import { Plus, Trash2 } from "lucide-react";
 
 function splitCommaList(value) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const parts = value.split(",").map((item) => item.trim());
+  return parts.filter((item, index) => item !== "" || index === parts.length - 1);
 }
 
 const emptyProject = {

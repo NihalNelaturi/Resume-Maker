@@ -8,10 +8,8 @@ import SkillsForm from "./SkillsForm.jsx";
 import { createClientId } from "../services/profileStorage.js";
 
 function splitCommaList(value) {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const parts = value.split(",").map((item) => item.trim());
+  return parts.filter((item, index) => item !== "" || index === parts.length - 1);
 }
 
 function skillObjectToGroups(skills = {}) {
@@ -51,7 +49,9 @@ export default function MasterProfileEditor({ profile, onChange }) {
     () => ({
       projects: profile.projects?.length || 0,
       experience: profile.experience?.length || 0,
-      skills: Object.values(profile.skills || {}).flat().length,
+      skills: Array.isArray(profile.skills)
+        ? profile.skills.reduce((sum, skill) => sum + (skill.items || []).length, 0)
+        : Object.values(profile.skills || {}).flat().length,
       education: profile.education?.length || 0,
       certifications: profile.certifications?.length || 0,
       achievements: profile.achievements?.length || 0,
@@ -134,8 +134,8 @@ export default function MasterProfileEditor({ profile, onChange }) {
           </section>
 
           <SkillsForm
-            skills={skillObjectToGroups(profile.skills)}
-            onChange={(groups) => updateProfile({ skills: skillGroupsToObject(groups) })}
+            skills={withIds(profile.skills || [], "skill")}
+            onChange={(skills) => updateProfile({ skills: withIds(skills, "skill") })}
           />
 
           <ExperienceForm

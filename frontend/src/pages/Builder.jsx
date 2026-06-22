@@ -300,7 +300,7 @@ export default function Builder() {
       !hasText(profile.personal?.full_name) &&
       !profile.experience?.length &&
       !profile.projects?.length &&
-      !Object.keys(profile.skills || {}).length;
+      !(Array.isArray(profile.skills) ? profile.skills.length : Object.keys(profile.skills || {}).length);
 
     if (!isEmpty) {
       const confirmed = window.confirm("Replace your current resume with the imported one?");
@@ -430,8 +430,8 @@ export default function Builder() {
     if (activeTab === "skills") {
       return (
         <SkillsForm
-          skills={skillObjectToGroups(profile.skills)}
-          onChange={(groups) => updateProfile({ skills: skillGroupsToObject(groups) })}
+          skills={withIds(profile.skills || [], "skill")}
+          onChange={(skills) => updateProfile({ skills: withIds(skills, "skill") })}
         />
       );
     }

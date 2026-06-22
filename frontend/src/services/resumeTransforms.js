@@ -22,6 +22,9 @@ function normalizeList(values = []) {
 }
 
 export function getAllSkillNames(profile) {
+  if (Array.isArray(profile.skills)) {
+    return profile.skills.flatMap((group) => group.items || []).filter(Boolean);
+  }
   return Object.values(profile.skills || {}).flat().filter(Boolean);
 }
 
@@ -30,8 +33,12 @@ export function resumeFromProfileVersion(profile, version) {
   const selectedProjectIds = new Set(version?.selectedProjectIds || []);
   const selectedExperienceIds = new Set(version?.selectedExperienceIds || []);
 
-  const skills = Object.entries(profile.skills || {})
-    .map(([category, items]) => ({
+  const skillsList = Array.isArray(profile.skills)
+    ? profile.skills
+    : Object.entries(profile.skills || {}).map(([category, items]) => ({ category, items }));
+
+  const skills = skillsList
+    .map(({ category, items }) => ({
       category,
       items: normalizeList(items).filter((item) => selectedSkillNames.has(item)),
     }))
@@ -74,8 +81,12 @@ function hasAnyBullet(bullets) {
 // (no identifying text and no content) are dropped so they don't render as
 // blank lines and don't get rejected by the backend (LaTeX) export.
 export function resumeFromProfile(profile) {
-  const skills = Object.entries(profile.skills || {})
-    .map(([category, items]) => ({ category, items: normalizeList(items) }))
+  const skillsList = Array.isArray(profile.skills)
+    ? profile.skills
+    : Object.entries(profile.skills || {}).map(([category, items]) => ({ category, items }));
+
+  const skills = skillsList
+    .map(({ category, items }) => ({ category, items: normalizeList(items) }))
     .filter((skill) => skill.items.length);
 
   const experience = (profile.experience || [])

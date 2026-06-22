@@ -59,8 +59,24 @@ export function loadCommandCenterState() {
   });
 }
 
+export function profileToStorage(profile) {
+  if (!profile) return profile;
+  const skillsArr = Array.isArray(profile.skills) ? profile.skills : [];
+  const skillsObj = {};
+  skillsArr.forEach((group) => {
+    const category = String(group.category || "").trim();
+    if (category) {
+      skillsObj[category] = (group.items || []).map((item) => String(item || "").trim()).filter(Boolean);
+    }
+  });
+  return {
+    ...profile,
+    skills: skillsObj,
+  };
+}
+
 export function saveCommandCenterState({ profile, versions, activeVersionId }) {
-  writeJson(STORAGE_KEYS.profile, profile);
+  writeJson(STORAGE_KEYS.profile, profileToStorage(profile));
   writeJson(STORAGE_KEYS.versions, versions);
   if (typeof window !== "undefined" && activeVersionId) {
     try {
@@ -77,7 +93,7 @@ export function createCommandCenterBackup({ profile, versions, activeVersionId }
     version: 1,
     exportedAt: new Date().toISOString(),
     data: {
-      profile,
+      profile: profileToStorage(profile),
       versions,
       activeVersionId,
     },
@@ -254,7 +270,9 @@ function normalizeProfile(profile) {
 function normalizeVersion(version, profile = null) {
   const validProjectIds = new Set((profile?.projects || []).map((project) => project.id));
   const validExperienceIds = new Set((profile?.experience || []).map((item) => item.id));
-  const validSkillNames = new Set(Object.values(profile?.skills || {}).flat());
+  const validSkillNames = Array.isArray(profile?.skills)
+    ? new Set(profile.skills.flatMap((group) => group.items || []))
+    : new Set(Object.values(profile?.skills || {}).flat());
   const jobDescription = typeof version.jobDescription === "string"
     ? version.jobDescription
     : typeof version.jobDescriptionText === "string"
@@ -318,15 +336,19 @@ function filterSelectableValues(values, allowedValues, profile) {
 }
 
 function normalizeSkills(skills) {
-  if (!isObject(skills)) return {};
-  return Object.fromEntries(
-    Object.entries(skills)
-      .map(([category, items]) => [
-        String(category || "").trim(),
-        isStringArray(items) ? items.map((item) => item.trim()).filter(Boolean) : [],
-      ])
-      .filter(([category]) => category),
-  );
+  if (Array.isArray(skills)) {
+    return skills.map((group) => ({
+      id: typeof group.id === "string" && group.id.trim() ? group.id : createClientId("skill"),
+      category: typeof group.category === "string" ? group.category : "",
+      items: Array.isArray(group.items) ? group.items.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    }));
+  }
+  const skillsObj = isObject(skills) ? skills : {};
+  return Object.entries(skillsObj).map(([category, items]) => ({
+    id: createClientId("skill"),
+    category: String(category || "").trim(),
+    items: Array.isArray(items) ? items.map((item) => String(item || "").trim()).filter(Boolean) : [],
+  }));
 }
 
 function normalizeProfileItems(items, prefix) {
