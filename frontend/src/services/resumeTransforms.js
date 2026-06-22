@@ -1,10 +1,10 @@
 export const DEFAULT_SECTION_ORDER = [
   "professional_summary",
-  "skills",
   "experience",
   "projects",
   "education",
   "certifications",
+  "skills",
   "achievements",
 ];
 

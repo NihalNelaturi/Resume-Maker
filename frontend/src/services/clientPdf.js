@@ -351,11 +351,11 @@ function renderResume(doc, resume, theme, page, fs, adv, gap) {
 
   const order = resume.section_order || [
     "professional_summary",
-    "skills",
     "experience",
     "projects",
     "education",
     "certifications",
+    "skills",
     "achievements",
   ];
 
