@@ -1,0 +1,22 @@
+{
+  "name": "resume-maker-monorepo",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "scripts": {
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "cd backend && .\\.venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "test:frontend": "npm run test:pdf --prefix frontend",
+    "test:backend": "cd backend && .\\.venv\\Scripts\\python.exe -m pytest -v",
+    "test:all": "concurrently \"npm run test:backend\" \"npm run test:frontend\"",
+    "lint:backend": "cd backend && .\\.venv\\Scripts\\ruff check .",
+    "generate:openapi": "cd backend && .\\.venv\\Scripts\\python.exe scripts/generate_openapi.py > ../frontend/src/types/openapi.json",
+    "generate:ts": "npm run generate:ts --prefix frontend",
+    "generate:types": "npm run generate:openapi && npm run generate:ts"
+  }
+}
