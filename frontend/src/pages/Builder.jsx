@@ -9,7 +9,6 @@ import JobMatchSuggestions from "../components/JobMatchSuggestions.jsx";
 import KeywordEvidenceTable from "../components/KeywordEvidenceTable.jsx";
 import MasterProfileEditor from "../components/MasterProfileEditor.jsx";
 import MissingKeywordSuggestions from "../components/MissingKeywordSuggestions.jsx";
-import ResumePreview from "../components/ResumePreview.jsx";
 import ScoreCards from "../components/ScoreCards.jsx";
 import SectionScoreBreakdown from "../components/SectionScoreBreakdown.jsx";
 import TargetControls from "../components/TargetControls.jsx";
@@ -138,6 +137,15 @@ export default function Builder() {
     const nextState = normalizeCommandCenterState({ profile, versions, activeVersionId });
     applyCommandCenterState(nextState);
   }, [activeVersionId, profile, versions]);
+
+  // Auto-generate the PDF preview when the Export step opens, so the resume is
+  // visible immediately without an extra click.
+  useEffect(() => {
+    if (activeStep === "export" && !pdfUrl && !missingRequiredHeader && !isGenerating) {
+      handleGenerate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStep]);
 
   const allSkillNames = useMemo(() => getAllSkillNames(profile), [profile]);
   const cleanedResume = useMemo(() => removeEmptyOptionalFields(resume), [resume]);
@@ -836,58 +844,57 @@ export default function Builder() {
     }
 
     return (
-      <WorkflowLayout
-        title="Export & Backup"
-        description="Preview the active resume, export PDF or LaTeX, and protect local data with backups."
-      >
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.8fr)]">
-          <div className="space-y-4">
-            <ResumePreview resume={cleanedResume} />
+      <WorkflowLayout title="Export" description="Preview your resume, fine-tune the template, and download.">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.62fr)]">
+          <section className="section-panel">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-base font-bold text-slate-950">PDF Preview</h2>
+              <button type="button" className="btn-primary" onClick={handleDownload} disabled={!pdfUrl || isBusy}>
+                <Download size={16} />
+                Download
+              </button>
+            </div>
             {pdfUrl ? (
-              <section className="section-panel">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h2 className="text-base font-bold text-slate-950">PDF Preview</h2>
-                  <button type="button" className="btn-secondary" onClick={handleDownload} disabled={isBusy}>
-                    <Download size={16} />
-                    Download
+              <iframe
+                title="Generated resume PDF preview"
+                src={pdfUrl}
+                className="h-[80vh] w-full rounded-md border border-slate-200 bg-white"
+              />
+            ) : (
+              <div className="flex h-[80vh] flex-col items-center justify-center gap-3 rounded-md border border-dashed border-slate-300 bg-slate-50 text-center">
+                <p className="max-w-xs text-sm text-slate-500">
+                  {missingRequiredHeader
+                    ? "Add your full name and a valid email in the Profile step to preview the PDF."
+                    : isGenerating
+                      ? "Generating preview…"
+                      : "Your resume preview will appear here."}
+                </p>
+                {!missingRequiredHeader ? (
+                  <button type="button" className="btn-primary" onClick={handleGenerate} disabled={resumeExportDisabled}>
+                    <FileDown size={16} />
+                    {isGenerating ? "Generating" : "Generate preview"}
                   </button>
-                </div>
-                <iframe
-                  title="Generated resume PDF preview"
-                  src={pdfUrl}
-                  className="h-[720px] w-full rounded-md border border-slate-200 bg-white"
-                />
-              </section>
-            ) : null}
-          </div>
+                ) : null}
+              </div>
+            )}
+            {pdfFilename ? <p className="mt-2 text-xs text-slate-500">Latest file: {pdfFilename}</p> : null}
+          </section>
 
           <div className="space-y-4">
             <section className="section-panel">
-              <h2 className="text-base font-bold text-slate-950">Export Actions</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                PDF is generated instantly in your browser. Pick a template, then export or download.
-              </p>
-              <TemplatePicker
-                templateId={pdfTemplateId}
-                disabled={isBusy}
-                onSelect={handleSelectTemplate}
-              />
+              <h2 className="text-base font-bold text-slate-950">Template & Layout</h2>
+              <TemplatePicker templateId={pdfTemplateId} disabled={isBusy} onSelect={handleSelectTemplate} />
               <PdfOptionsControls options={pdfOptions} disabled={isBusy} onChange={handleUpdatePdfOptions} />
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="button" className="btn-secondary" onClick={handleExportLatex} disabled={serverActionDisabled}>
-                  <FileCode2 size={16} />
-                  {isExportingLatex ? "Exporting" : "Export LaTeX"}
-                </button>
                 <button type="button" className="btn-primary" onClick={handleGenerate} disabled={resumeExportDisabled}>
                   <FileDown size={16} />
                   {isGenerating ? "Generating" : "Export PDF"}
                 </button>
-                <button type="button" className="btn-secondary" onClick={handleDownload} disabled={!pdfUrl || isBusy}>
-                  <Download size={16} />
-                  Download
+                <button type="button" className="btn-secondary" onClick={handleExportLatex} disabled={serverActionDisabled}>
+                  <FileCode2 size={16} />
+                  {isExportingLatex ? "Exporting" : "Export LaTeX"}
                 </button>
               </div>
-              {pdfFilename ? <p className="mt-3 text-xs text-slate-500">Latest file: {pdfFilename}</p> : null}
             </section>
 
             <BackupControls
@@ -912,44 +919,19 @@ export default function Builder() {
               {activeVersion.targetCompany || "Target company"} - {activeVersion.targetRole || "Target role"}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${
-                apiStatus === "online"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : apiStatus === "offline"
-                    ? "border-red-200 bg-red-50 text-red-800"
-                    : "border-slate-200 bg-slate-50 text-slate-700"
-              }`}
-            >
-              <Server size={16} />
-              API {apiStatus}
-            </span>
-            <button type="button" className="btn-secondary" onClick={handleAnalyze} disabled={serverActionDisabled}>
-              <Search size={16} />
-              {isAnalyzing ? "Analyzing" : "Analyze"}
-            </button>
-            <button type="button" className="btn-secondary" onClick={handleRewrite} disabled={serverActionDisabled}>
-              <Wand2 size={16} />
-              {isRewriting ? "Rewriting" : "Rewrite Bullets"}
-            </button>
-            <button type="button" className="btn-secondary" onClick={handleSave} disabled={serverActionDisabled}>
-              <Save size={16} />
-              {isSaving ? "Saving" : "Save draft"}
-            </button>
-            <button type="button" className="btn-secondary" onClick={handleExportLatex} disabled={serverActionDisabled}>
-              <FileCode2 size={16} />
-              {isExportingLatex ? "Exporting" : "Export LaTeX"}
-            </button>
-            <button type="button" className="btn-primary" onClick={handleGenerate} disabled={resumeExportDisabled}>
-              <FileDown size={16} />
-              {isGenerating ? "Generating" : "Export PDF"}
-            </button>
-            <button type="button" className="btn-secondary" onClick={handleDownload} disabled={!pdfUrl || isBusy}>
-              <Download size={16} />
-              Download
-            </button>
-          </div>
+          <span
+            className={`inline-flex items-center gap-2 self-start rounded-md border px-3 py-2 text-sm font-semibold ${
+              apiStatus === "online"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : apiStatus === "offline"
+                  ? "border-red-200 bg-red-50 text-red-800"
+                  : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}
+            title="Backend status (used for analysis; PDF export works without it)"
+          >
+            <Server size={16} />
+            API {apiStatus}
+          </span>
         </div>
         <WorkflowNav activeStep={activeStep} onSelectStep={setActiveStep} />
       </div>

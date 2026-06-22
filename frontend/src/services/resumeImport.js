@@ -150,9 +150,22 @@ function splitHeaderParts(line) {
   return parts;
 }
 
+function looksLikeHeader(line) {
+  // Distinguishes a real new entry header from a wrapped bullet continuation.
+  if (YEAR_RE.test(line)) return true;
+  const words = line.split(/\s+/);
+  if (words.length > 10) return false; // long prose is almost certainly a wrap
+  if (!/^[\p{Lu}]/u.test(line)) return false; // headers start with a capital (Latin or Greek)
+  if (/[.;:]$/.test(line)) return false; // continuations usually end with punctuation
+  if (/\s[-–—|]\s|,|\bat\b|@/i.test(line)) return true; // header-style separators
+  return words.length <= 6; // a short Title-case line
+}
+
 function parseEntries(sectionLines) {
-  // Group lines into entries: a non-bullet line starts an entry header; bullet
-  // lines (and wrapped continuation lines) attach to the current entry.
+  // Group lines into entries. A bullet line attaches to the current entry; a
+  // non-bullet line starts a new entry only if it looks like a header,
+  // otherwise it is treated as a wrapped continuation of the previous bullet
+  // (this prevents wrapped bullets from becoming spurious bold "titles").
   const entries = [];
   let current = null;
 
@@ -163,14 +176,26 @@ function parseEntries(sectionLines) {
     if (isBullet(line)) {
       if (!current) current = { header: "", bullets: [], extra: [] };
       current.bullets.push(stripBullet(line));
-    } else if (!current || current.bullets.length > 0) {
-      // New entry header (first header, or a header after bullets ended one).
-      if (current) entries.push(current);
+      continue;
+    }
+
+    if (!current) {
+      current = { header: line, bullets: [], extra: [] };
+    } else if (current.bullets.length === 0) {
+      // Non-bullet line right under a header with no bullets yet: detail line
+      // (e.g. a degree under an institution), unless it is clearly a new header.
+      if (looksLikeHeader(line) && current.extra.length > 0) {
+        entries.push(current);
+        current = { header: line, bullets: [], extra: [] };
+      } else {
+        current.extra.push(line);
+      }
+    } else if (looksLikeHeader(line)) {
+      entries.push(current);
       current = { header: line, bullets: [], extra: [] };
     } else {
-      // Non-bullet line right under a header with no bullets yet: extra detail
-      // (e.g. degree line under an institution).
-      current.extra.push(line);
+      // Wrapped continuation of the previous bullet.
+      current.bullets[current.bullets.length - 1] += ` ${line}`;
     }
   }
   if (current) entries.push(current);
