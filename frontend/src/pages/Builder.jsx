@@ -7,6 +7,7 @@ import ProjectsForm from "../components/ProjectsForm.jsx";
 import EducationForm from "../components/EducationForm.jsx";
 import { SimpleListEditor } from "../components/MasterProfileEditor.jsx";
 import BackupControls from "../components/BackupControls.jsx";
+import ImportResumePanel from "../components/ImportResumePanel.jsx";
 import SectionOrderControl from "../components/SectionOrderControl.jsx";
 import { generateClientResumePdf } from "../services/clientPdf.js";
 import { PDF_TEMPLATES, DEFAULT_TEMPLATE_ID } from "../services/pdfTemplates.js";
