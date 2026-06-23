@@ -510,7 +510,7 @@ export default function Builder() {
           {pdfUrl ? (
             <iframe
               title="Resume PDF preview"
-              src={pdfUrl}
+              src={`${pdfUrl}#navpanes=0`}
               className="h-[80vh] w-full rounded-md border border-slate-200 bg-white"
             />
           ) : (

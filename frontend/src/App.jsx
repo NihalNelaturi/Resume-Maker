@@ -6,7 +6,7 @@ export default function App() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           <span className="text-xl font-extrabold tracking-tight text-sky-700">
-            Resu<span className="text-slate-900">Me</span>
+            Irenito Resu<span className="text-slate-900">Me</span>
           </span>
           <span className="text-xs text-slate-500">Build a professional resume in minutes</span>
         </div>
