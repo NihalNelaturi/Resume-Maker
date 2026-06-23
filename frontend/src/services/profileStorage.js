@@ -6,6 +6,16 @@ export const STORAGE_KEYS = {
   activeVersionId: "resumeCommandCenter.activeVersionId.v1",
 };
 
+const DEFAULT_SECTION_ORDER = [
+  "professional_summary",
+  "experience",
+  "projects",
+  "education",
+  "certifications",
+  "skills",
+  "achievements",
+];
+
 const LEGACY_DEMO_MARKERS = {
   projectId: "project-resume-maker",
   experienceId: "exp-research-intern",
@@ -263,6 +273,7 @@ function normalizeProfile(profile) {
     education: normalizeProfileItems(profile.education, "edu"),
     certifications: normalizeProfileItems(profile.certifications, "cert"),
     achievements: normalizeProfileItems(profile.achievements, "achievement"),
+    sectionOrder: Array.isArray(profile.sectionOrder) ? profile.sectionOrder : [...DEFAULT_SECTION_ORDER],
     bulletBank: profile.bulletBank || {},
   };
 }
@@ -387,7 +398,8 @@ function isValidProfile(profile) {
     Array.isArray(profile.education) &&
     Array.isArray(profile.certifications) &&
     Array.isArray(profile.achievements) &&
-    isObject(profile.bulletBank)
+    isObject(profile.bulletBank) &&
+    (profile.sectionOrder === undefined || Array.isArray(profile.sectionOrder))
   );
 }
 

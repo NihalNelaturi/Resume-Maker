@@ -65,7 +65,7 @@ export function resumeFromProfileVersion(profile, version) {
     education: (profile.education || []).map(stripId),
     certifications: (profile.certifications || []).map(stripId),
     achievements: (profile.achievements || []).map(stripId),
-    section_order: DEFAULT_SECTION_ORDER,
+    section_order: profile.sectionOrder || DEFAULT_SECTION_ORDER,
   };
 }
 
@@ -121,8 +121,8 @@ export function resumeFromProfile(profile) {
     projects,
     education,
     certifications,
-    achievements,
-    section_order: DEFAULT_SECTION_ORDER,
+    achievements: achievements,
+    section_order: profile.sectionOrder || DEFAULT_SECTION_ORDER,
   };
 }
 
